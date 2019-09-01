@@ -1,3 +1,9 @@
+//! Implementation of the full-automatic tuple trait implementation.
+//!
+//! The full-automatic implementation uses the trait definition to generate the implementations for
+//! tuples. This has some limitations, as no support for associated types, consts, return values or
+//! functions with a default implementation.
+
 use proc_macro2::{Span, TokenStream};
 
 use std::iter::repeat;
@@ -48,6 +54,12 @@ struct CheckTraitDeclaration {
     errors: Vec<Error>,
 }
 
+impl CheckTraitDeclaration {
+	fn add_error<T: Spanned>(&mut self, span: &T) {
+		self.errors.push(Error::new(span.span(), CHECK_ERROR_MSG));
+	}
+}
+
 const CHECK_ERROR_MSG: &str =
     "Not supported by full-automatic tuple implementation. \
      Use semi-automatic tuple implementation for more control of the implementation.";
@@ -56,16 +68,20 @@ impl<'ast> Visit<'ast> for CheckTraitDeclaration {
     fn visit_trait_item(&mut self, ti: &'ast TraitItem) {
         match ti {
             TraitItem::Method(m) => visit::visit_trait_item_method(self, m),
-            _ => self.errors.push(Error::new(ti.span(), CHECK_ERROR_MSG)),
+            _ => self.add_error(ti),
         }
     }
 
     fn visit_return_type(&mut self, rt: &'ast ReturnType) {
         match rt {
             ReturnType::Default => {}
-            ReturnType::Type(_, _) => self.errors.push(Error::new(rt.span(), CHECK_ERROR_MSG)),
+            ReturnType::Type(_, _) => self.add_error(rt),
         }
     }
+
+	fn visit_block(&mut self, block: &'ast syn::Block) {
+		self.add_error(block)
+	}
 }
 
 fn generate_tuple_impl(definition: &ItemTrait, tuple_elements: &[Ident]) -> TokenStream {

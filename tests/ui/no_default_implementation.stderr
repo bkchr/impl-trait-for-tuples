@@ -1,0 +1,5 @@
+error: Not supported by full-automatic tuple implementation. Use semi-automatic tuple implementation for more control of the implementation.
+ --> $DIR/no_default_implementation.rs:3:12
+  |
+3 |     fn test() { println!("Hello"); }
+  |               ^^^^^^^^^^^^^^^^^^^^^^
