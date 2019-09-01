@@ -55,9 +55,9 @@ struct CheckTraitDeclaration {
 }
 
 impl CheckTraitDeclaration {
-	fn add_error<T: Spanned>(&mut self, span: &T) {
-		self.errors.push(Error::new(span.span(), CHECK_ERROR_MSG));
-	}
+    fn add_error<T: Spanned>(&mut self, span: &T) {
+        self.errors.push(Error::new(span.span(), CHECK_ERROR_MSG));
+    }
 }
 
 const CHECK_ERROR_MSG: &str =
@@ -78,10 +78,6 @@ impl<'ast> Visit<'ast> for CheckTraitDeclaration {
             ReturnType::Type(_, _) => self.add_error(rt),
         }
     }
-
-	fn visit_block(&mut self, block: &'ast syn::Block) {
-		self.add_error(block)
-	}
 }
 
 fn generate_tuple_impl(definition: &ItemTrait, tuple_elements: &[Ident]) -> TokenStream {
