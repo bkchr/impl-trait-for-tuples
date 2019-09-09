@@ -19,11 +19,11 @@ use quote::{quote, ToTokens};
 
 /// The `#( Tuple::test() ),*` (tuple repetition) syntax.
 struct TupleRepetition {
-    pound_token: token::Pound,
-    paren_token: token::Paren,
-    stmts: Vec<Stmt>,
-    comma_token: Option<token::Comma>,
-    star_token: token::Star,
+    pub pound_token: token::Pound,
+    pub paren_token: token::Paren,
+    pub stmts: Vec<Stmt>,
+    pub comma_token: Option<token::Comma>,
+    pub star_token: token::Star,
 }
 
 impl Parse for TupleRepetition {
@@ -107,7 +107,7 @@ impl Parse for ForTuplesMacro {
 
         if lookahead1.peek(token::Type) {
             let content;
-            Ok(Self::Item {
+            Ok(ForTuplesMacro::Item {
                 type_token: input.parse()?,
                 ident: input.parse()?,
                 equal_token: input.parse()?,
@@ -117,12 +117,12 @@ impl Parse for ForTuplesMacro {
             })
         } else if lookahead1.peek(token::Paren) {
             let content;
-            Ok(Self::StmtParenthesized {
+            Ok(ForTuplesMacro::StmtParenthesized {
                 paren_token: parenthesized!(content in input),
                 tuple_repetition: content.parse()?,
             })
         } else if lookahead1.peek(token::Pound) {
-            Ok(Self::Stmt {
+            Ok(ForTuplesMacro::Stmt {
                 tuple_repetition: input.parse()?,
             })
         } else {
@@ -231,6 +231,7 @@ impl<'a> ToTupleImplementation<'a> {
         let mut res = add_tuple_elements_generics(tuples, res)?;
         // Add the correct self type
         res.self_ty = parse_quote!( ( #( #tuples ),* ) );
+        res.attrs.push(parse_quote!(#[allow(unused)]));
 
         if let Some(first_error) = to_tuple.errors.pop() {
             Err(to_tuple.errors.into_iter().fold(first_error, |mut e, n| {

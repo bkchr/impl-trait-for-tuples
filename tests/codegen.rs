@@ -167,7 +167,7 @@ fn trait_with_return_type() {
     }
 
     fn test<T: TraitWithReturnType>(counter: &mut u32) {
-        T::function(counter);
+        T::function(counter).unwrap();
     }
 
     let mut counter = 0;
