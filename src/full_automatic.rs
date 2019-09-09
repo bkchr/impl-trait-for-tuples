@@ -4,6 +4,8 @@
 //! tuples. This has some limitations, as no support for associated types, consts, return values or
 //! functions with a default implementation.
 
+use crate::utils::add_tuple_element_generics;
+
 use proc_macro2::{Span, TokenStream};
 
 use std::iter::repeat;
@@ -132,11 +134,7 @@ fn generate_generics(definition: &ItemTrait, tuple_elements: &[Ident]) -> Generi
             .for_each(|ty| where_clause.predicates.push(parse_quote!(#ty: Clone)));
     }
 
-    tuple_elements.iter().for_each(|tuple_element| {
-        generics
-            .params
-            .push(parse_quote!(#tuple_element : #name #ty_generics));
-    });
+    add_tuple_element_generics(tuple_elements, quote!(#name #ty_generics), &mut generics);
 
     generics
 }

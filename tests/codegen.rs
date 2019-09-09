@@ -142,3 +142,47 @@ fn trait_with_static_functions_and_generics() {
     test::<(Impl, Impl, Impl, Impl, Impl)>(&mut counter);
     assert_eq!(5, counter);
 }
+
+#[test]
+fn trait_with_return_type() {
+    trait TraitWithReturnType {
+        fn function(counter: &mut u32) -> Result<(), ()>;
+    }
+
+    #[impl_for_tuples(50)]
+    impl TraitWithReturnType for Tuple {
+        fn function(counter: &mut u32) -> Result<(), ()> {
+            for_tuples!( #( Tuple::function(counter)?; )* );
+            Ok(())
+        }
+    }
+
+    struct Impl;
+
+    impl TraitWithReturnType for Impl {
+        fn function(counter: &mut u32) -> Result<(), ()> {
+            *counter += 1;
+            Ok(())
+        }
+    }
+
+    fn test<T: TraitWithReturnType>(counter: &mut u32) {
+        T::function(counter);
+    }
+
+    let mut counter = 0;
+    test::<()>(&mut counter);
+    assert_eq!(0, counter);
+
+    let mut counter = 0;
+    test::<(Impl)>(&mut counter);
+    assert_eq!(1, counter);
+
+    let mut counter = 0;
+    test::<(Impl, Impl, Impl)>(&mut counter);
+    assert_eq!(3, counter);
+
+    let mut counter = 0;
+    test::<(Impl, Impl, Impl, Impl, Impl)>(&mut counter);
+    assert_eq!(5, counter);
+}
