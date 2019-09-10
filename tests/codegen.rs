@@ -286,3 +286,53 @@ fn trait_with_associated_type_and_generics() {
     assert_eq!(5, counter);
     assert_eq!((1, 2, 3, 4, 5), res);
 }
+
+#[test]
+fn trait_with_associated_type_and_self() {
+    trait TraitWithAssociatedTypeAndSelf {
+        type Ret;
+        fn function(&self, counter: &mut u32) -> Self::Ret;
+    }
+
+    #[impl_for_tuples(50)]
+    impl TraitWithAssociatedTypeAndSelf for Tuple {
+        for_tuples!( type Ret = ( #( Tuple::Ret ),* ); );
+        fn function(&self, counter: &mut u32) -> Self::Ret {
+            for_tuples!( ( #( Tuple.function(counter) ),* ) )
+        }
+    }
+
+    struct Impl;
+
+    impl TraitWithAssociatedTypeAndSelf for Impl {
+        type Ret = u32;
+        fn function(&self, counter: &mut u32) -> u32 {
+            *counter += 1;
+            *counter
+        }
+    }
+
+    fn test<T: TraitWithAssociatedTypeAndSelf>(data: T, counter: &mut u32) -> T::Ret {
+        data.function(counter)
+    }
+
+    let mut counter = 0;
+    let res = test((), &mut counter);
+    assert_eq!(0, counter);
+    assert_eq!((), res);
+
+    let mut counter = 0;
+    let res = test(Impl, &mut counter);
+    assert_eq!(1, counter);
+    assert_eq!((1), res);
+
+    let mut counter = 0;
+    let res = test((Impl, Impl, Impl), &mut counter);
+    assert_eq!(3, counter);
+    assert_eq!((1, 2, 3), res);
+
+    let mut counter = 0;
+    let res = test((Impl, Impl, Impl, Impl, Impl), &mut counter);
+    assert_eq!(5, counter);
+    assert_eq!((1, 2, 3, 4, 5), res);
+}

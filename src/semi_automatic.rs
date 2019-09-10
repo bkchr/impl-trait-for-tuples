@@ -12,7 +12,8 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_quote,
     spanned::Spanned,
-    token, Block, Error, Expr, Ident, ImplItem, ItemImpl, Macro, Result, Stmt, Type,
+    token, Block, Error, Expr, FnArg, Ident, ImplItem, ImplItemMethod, Index, ItemImpl, Macro,
+    Result, Stmt, Type,
 };
 
 use quote::{quote, ToTokens};
@@ -41,13 +42,24 @@ impl Parse for TupleRepetition {
 
 impl TupleRepetition {
     /// Expand this repetition to the actual implementation.
-    fn expand(self, tuple_placeholder_ident: &Ident, tuples: &[Ident]) -> TokenStream {
+    fn expand(
+        self,
+        tuple_placeholder_ident: &Ident,
+        tuples: &[Ident],
+        use_self: bool,
+    ) -> TokenStream {
         let mut generated = TokenStream::new();
 
-        for tuple in tuples {
+        for (i, tuple) in tuples.iter().enumerate() {
             generated.extend(self.stmts.iter().cloned().map(|s| {
-                ReplaceIdent::replace_ident_in_stmt(tuple_placeholder_ident, tuple, s)
-                    .to_token_stream()
+                ReplaceTuplePlaceholder::replace_ident_in_stmt(
+                    tuple_placeholder_ident,
+                    tuple,
+                    use_self,
+                    i,
+                    s,
+                )
+                .to_token_stream()
             }));
 
             if let Some(ref comma) = self.comma_token {
@@ -59,24 +71,53 @@ impl TupleRepetition {
     }
 }
 
-struct ReplaceIdent<'a> {
+/// Replace the tuple place holder in the ast.
+struct ReplaceTuplePlaceholder<'a> {
     search: &'a Ident,
     replace: &'a Ident,
+    use_self: bool,
+    index: Index,
 }
 
-impl<'a> ReplaceIdent<'a> {
-    fn replace_ident_in_stmt(search: &'a Ident, replace: &'a Ident, stmt: Stmt) -> Stmt {
-        let mut folder = ReplaceIdent { search, replace };
+impl<'a> ReplaceTuplePlaceholder<'a> {
+    fn replace_ident_in_stmt(
+        search: &'a Ident,
+        replace: &'a Ident,
+        use_self: bool,
+        index: usize,
+        stmt: Stmt,
+    ) -> Stmt {
+        let mut folder = Self {
+            search,
+            replace,
+            use_self,
+            index: index.into(),
+        };
         fold::fold_stmt(&mut folder, stmt)
     }
 }
 
-impl<'a> Fold for ReplaceIdent<'a> {
+impl<'a> Fold for ReplaceTuplePlaceholder<'a> {
     fn fold_ident(&mut self, ident: Ident) -> Ident {
         if &ident == self.search {
             self.replace.clone()
         } else {
             ident
+        }
+    }
+
+    fn fold_expr(&mut self, mut expr: Expr) -> Expr {
+        match expr {
+            Expr::MethodCall(ref mut call) if self.use_self => match *call.receiver {
+                Expr::Path(ref path) if path.path.is_ident(self.search) => {
+                    let index = &self.index;
+                    call.receiver = parse_quote!( self.#index );
+
+                    call.clone().into()
+                }
+                _ => fold::fold_expr_method_call(self, call.clone()).into(),
+            },
+            _ => fold::fold_expr(self, expr),
         }
     }
 }
@@ -147,10 +188,16 @@ impl ForTuplesMacro {
     /// Expand `self` to the actual implementation without the `for_tuples!` macro.
     ///
     /// This will unroll the repetition by replacing the placeholder identifier in each iteration
-    /// with the one given in `tuples`.
+    /// with the one given in `tuples`. If `use_self` is `true`, the tuple will be access by using
+    /// `self.x`.
     ///
     /// Returns the generated code.
-    fn expand(self, tuple_placeholder_ident: &Ident, tuples: &[Ident]) -> TokenStream {
+    fn expand(
+        self,
+        tuple_placeholder_ident: &Ident,
+        tuples: &[Ident],
+        use_self: bool,
+    ) -> TokenStream {
         match self {
             Self::Item {
                 type_token,
@@ -161,7 +208,7 @@ impl ForTuplesMacro {
                 semi_token,
             } => {
                 let mut token_stream = type_token.to_token_stream();
-                let repetition = tuple_repetition.expand(tuple_placeholder_ident, tuples);
+                let repetition = tuple_repetition.expand(tuple_placeholder_ident, tuples, use_self);
 
                 ident.to_tokens(&mut token_stream);
                 equal_token.to_tokens(&mut token_stream);
@@ -175,14 +222,14 @@ impl ForTuplesMacro {
                 tuple_repetition,
             } => {
                 let mut token_stream = TokenStream::new();
-                let repetition = tuple_repetition.expand(tuple_placeholder_ident, tuples);
+                let repetition = tuple_repetition.expand(tuple_placeholder_ident, tuples, use_self);
 
                 paren_token.surround(&mut token_stream, |tokens| tokens.extend(repetition));
 
                 token_stream
             }
             Self::Stmt { tuple_repetition } => {
-                tuple_repetition.expand(tuple_placeholder_ident, tuples)
+                tuple_repetition.expand(tuple_placeholder_ident, tuples, use_self)
             }
         }
     }
@@ -211,6 +258,8 @@ struct ToTupleImplementation<'a> {
     tuple_placeholder_ident: &'a Ident,
     /// Any errors found while doing the conversion.
     errors: Vec<Error>,
+    /// This is set to `true`, when folding in a function block that has a `self` parameter.
+    has_self_parameter: bool,
 }
 
 impl<'a> ToTupleImplementation<'a> {
@@ -224,6 +273,7 @@ impl<'a> ToTupleImplementation<'a> {
             tuples,
             errors: Vec::new(),
             tuple_placeholder_ident,
+            has_self_parameter: false,
         };
 
         let res = fold::fold_item_impl(&mut to_tuple, trait_impl.clone());
@@ -248,9 +298,11 @@ impl<'a> Fold for ToTupleImplementation<'a> {
     fn fold_impl_item(&mut self, i: ImplItem) -> ImplItem {
         match i {
             ImplItem::Macro(macro_item) => match ForTuplesMacro::try_from(&macro_item.mac) {
-                Ok(Some(for_tuples)) => ImplItem::Verbatim(
-                    for_tuples.expand(&self.tuple_placeholder_ident, self.tuples),
-                ),
+                Ok(Some(for_tuples)) => ImplItem::Verbatim(for_tuples.expand(
+                    &self.tuple_placeholder_ident,
+                    self.tuples,
+                    false,
+                )),
                 Ok(None) => fold::fold_impl_item_macro(self, macro_item).into(),
                 Err(e) => {
                     self.errors.push(e);
@@ -271,7 +323,11 @@ impl<'a> Fold for ToTupleImplementation<'a> {
         let (expr, expanded) = match expr {
             Expr::Macro(expr_macro) => match ForTuplesMacro::try_from(&expr_macro.mac) {
                 Ok(Some(for_tuples)) => (
-                    Expr::Verbatim(for_tuples.expand(&self.tuple_placeholder_ident, self.tuples)),
+                    Expr::Verbatim(for_tuples.expand(
+                        &self.tuple_placeholder_ident,
+                        self.tuples,
+                        self.has_self_parameter,
+                    )),
                     true,
                 ),
                 Ok(None) => (fold::fold_expr_macro(self, expr_macro).into(), false),
@@ -295,9 +351,11 @@ impl<'a> Fold for ToTupleImplementation<'a> {
     fn fold_type(&mut self, ty: Type) -> Type {
         match ty {
             Type::Macro(ty_macro) => match ForTuplesMacro::try_from(&ty_macro.mac) {
-                Ok(Some(for_tuples)) => {
-                    Type::Verbatim(for_tuples.expand(&self.tuple_placeholder_ident, self.tuples))
-                }
+                Ok(Some(for_tuples)) => Type::Verbatim(for_tuples.expand(
+                    &self.tuple_placeholder_ident,
+                    self.tuples,
+                    false,
+                )),
                 Ok(None) => fold::fold_type_macro(self, ty_macro).into(),
                 Err(e) => {
                     self.errors.push(e);
@@ -306,6 +364,29 @@ impl<'a> Fold for ToTupleImplementation<'a> {
             },
             _ => fold::fold_type(self, ty),
         }
+    }
+
+    fn fold_impl_item_method(&mut self, mut impl_item_method: ImplItemMethod) -> ImplItemMethod {
+        let has_self = impl_item_method
+            .sig
+            .inputs
+            .first()
+            .map(|a| match a {
+                FnArg::Receiver(_) => true,
+                _ => false,
+            })
+            .unwrap_or(false);
+
+        impl_item_method.sig = fold::fold_signature(self, impl_item_method.sig);
+
+        // Store the old value and set the current one
+        let old_has_self_parameter = self.has_self_parameter;
+        self.has_self_parameter = has_self;
+
+        impl_item_method.block = fold::fold_block(self, impl_item_method.block);
+        self.has_self_parameter = old_has_self_parameter;
+
+        impl_item_method
     }
 }
 

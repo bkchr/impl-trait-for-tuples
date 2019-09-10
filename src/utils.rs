@@ -22,9 +22,7 @@ pub fn add_tuple_element_generics(
         });
     } else {
         tuple_elements.iter().for_each(|tuple_element| {
-            generics
-                .params
-                .push(parse_quote!(#tuple_element : #bounds));
+            generics.params.push(parse_quote!(#tuple_element : #bounds));
         });
     }
 }
