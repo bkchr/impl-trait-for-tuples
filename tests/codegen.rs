@@ -40,6 +40,47 @@ fn is_implemented_for_tuples() {
 }
 
 #[test]
+fn is_implemented_for_tuples_with_semi() {
+    trait EmptyTrait {}
+
+    #[impl_for_tuples(5)]
+    impl EmptyTrait for Tuple {}
+
+    struct EmptyTraitImpl;
+
+    impl EmptyTrait for EmptyTraitImpl {}
+
+    fn test<T: EmptyTrait>() {}
+
+    test::<()>();
+    test::<(EmptyTraitImpl)>();
+    test::<(EmptyTraitImpl, EmptyTraitImpl, EmptyTraitImpl)>();
+    test::<(
+        EmptyTraitImpl,
+        EmptyTraitImpl,
+        EmptyTraitImpl,
+        EmptyTraitImpl,
+        EmptyTraitImpl,
+    )>();
+    test::<(
+        (
+            EmptyTraitImpl,
+            EmptyTraitImpl,
+            EmptyTraitImpl,
+            EmptyTraitImpl,
+            EmptyTraitImpl,
+        ),
+        (
+            EmptyTraitImpl,
+            EmptyTraitImpl,
+            EmptyTraitImpl,
+            EmptyTraitImpl,
+            EmptyTraitImpl,
+        ),
+    )>();
+}
+
+#[test]
 fn trait_with_static_functions() {
     #[impl_for_tuples(50)]
     trait TraitWithFunctions {

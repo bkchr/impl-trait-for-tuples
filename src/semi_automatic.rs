@@ -59,7 +59,8 @@ impl TupleRepetition {
                     i,
                     s,
                 )
-                .to_token_stream()
+                .map(|s| s.to_token_stream())
+                .unwrap_or_else(|e| e.to_compile_error())
             }));
 
             if let Some(ref comma) = self.comma_token {
@@ -77,6 +78,7 @@ struct ReplaceTuplePlaceholder<'a> {
     replace: &'a Ident,
     use_self: bool,
     index: Index,
+    errors: Vec<Error>,
 }
 
 impl<'a> ReplaceTuplePlaceholder<'a> {
@@ -86,14 +88,25 @@ impl<'a> ReplaceTuplePlaceholder<'a> {
         use_self: bool,
         index: usize,
         stmt: Stmt,
-    ) -> Stmt {
+    ) -> Result<Stmt> {
         let mut folder = Self {
             search,
             replace,
             use_self,
             index: index.into(),
+            errors: Vec::new(),
         };
-        fold::fold_stmt(&mut folder, stmt)
+
+        let res = fold::fold_stmt(&mut folder, stmt);
+
+        if let Some(first) = folder.errors.pop() {
+            Err(folder.errors.into_iter().fold(first, |mut e, n| {
+                e.combine(n);
+                e
+            }))
+        } else {
+            Ok(res)
+        }
     }
 }
 
@@ -106,16 +119,24 @@ impl<'a> Fold for ReplaceTuplePlaceholder<'a> {
         }
     }
 
-    fn fold_expr(&mut self, mut expr: Expr) -> Expr {
+    fn fold_expr(&mut self, expr: Expr) -> Expr {
         match expr {
-            Expr::MethodCall(ref mut call) if self.use_self => match *call.receiver {
+            Expr::MethodCall(mut call) => match *call.receiver {
                 Expr::Path(ref path) if path.path.is_ident(self.search) => {
-                    let index = &self.index;
-                    call.receiver = parse_quote!( self.#index );
+                    if self.use_self {
+                        let index = &self.index;
+                        call.receiver = parse_quote!( self.#index );
 
-                    call.clone().into()
+                        call.into()
+                    } else {
+                        self.errors.push(Error::new(
+                            path.span(),
+                            "Can not call non-static method from within a static method.",
+                        ));
+                        Expr::Verbatim(Default::default())
+                    }
                 }
-                _ => fold::fold_expr_method_call(self, call.clone()).into(),
+                _ => fold::fold_expr_method_call(self, call).into(),
             },
             _ => fold::fold_expr(self, expr),
         }
@@ -413,7 +434,7 @@ pub fn semi_automatic_impl(
 
     let mut res = TokenStream::new();
 
-    (0..tuple_elements.len())
+    (0..=tuple_elements.len())
         // We do not need to generate for the tuple with one element, as this is done automatically
         // by rust.
         .filter(|i| *i != 1)
