@@ -24,10 +24,11 @@ use quote::quote;
 pub fn full_automatic_impl(
     definition: ItemTrait,
     tuple_elements: Vec<Ident>,
+    min: Option<usize>,
 ) -> Result<TokenStream> {
     check_trait_declaration(&definition)?;
 
-    let impls = (0..=tuple_elements.len())
+    let impls = (min.unwrap_or(0)..=tuple_elements.len())
         .filter(|i| *i != 1)
         .map(|i| generate_tuple_impl(&definition, &tuple_elements[0..i]));
 

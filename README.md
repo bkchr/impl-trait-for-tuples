@@ -5,7 +5,8 @@
 Attribute macro to implement a trait for tuples
 
 * [Introduction](#introduction)
-* [Semi-automatic syntax](#semi-automatic-syntax)
+* [Syntax](#syntax)
+* [Limitations](#limitations)
 * [Example](#example)
 * [License](#license)
 
@@ -26,7 +27,13 @@ tuple access in this dummy implementation a special syntax is required `for_tupl
 This would expand to `Tuple::function();` for each tuple while `Tuple` is chosen by the user and will be
 replaced by the corresponding tuple identifier per iteration.
 
-## Semi-automatic syntax
+## Syntax
+
+The attribute macro can be called with one `#[impl_for_tuples(5)]` or with two `#[impl_for_tuples(2, 5)]`
+parameters. The former instructs the macro to generate up to a tuple of five elements and the later instructs it
+to generate from a tuple with two element up to five elements.
+
+### Semi-automatic syntax
 
 ```rust
 trait Trait {
@@ -66,6 +73,11 @@ The given example shows all supported combinations of `for_tuples!`. When access
 `self` tuple instance, `Tuple.` is the required syntax and is replaced by `self.0`, `self.1`, etc.
 The placeholder tuple identifer is taken from the self type given to the implementation block. So, it
 is up to the user to chose any valid identifier.
+
+## Limitations
+
+The macro does not supports `for_tuples!` calls in a different macro, so stuff like
+`vec![ for_tuples!( bla ) ]` will generate invalid code.
 
 ## Example
 

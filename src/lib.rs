@@ -4,7 +4,8 @@
 Attribute macro to implement a trait for tuples
 
 * [Introduction](#introduction)
-* [Semi-automatic syntax](#semi-automatic-syntax)
+* [Syntax](#syntax)
+* [Limitations](#limitations)
 * [Example](#example)
 * [License](#license)
 
@@ -25,7 +26,13 @@ tuple access in this dummy implementation a special syntax is required `for_tupl
 This would expand to `Tuple::function();` for each tuple while `Tuple` is chosen by the user and will be
 replaced by the corresponding tuple identifier per iteration.
 
-## Semi-automatic syntax
+## Syntax
+
+The attribute macro can be called with one `#[impl_for_tuples(5)]` or with two `#[impl_for_tuples(2, 5)]`
+parameters. The former instructs the macro to generate up to a tuple of five elements and the later instructs it
+to generate from a tuple with two element up to five elements.
+
+### Semi-automatic syntax
 
 ```
 # use impl_trait_for_tuples::impl_for_tuples;
@@ -67,6 +74,11 @@ The given example shows all supported combinations of `for_tuples!`. When access
 `self` tuple instance, `Tuple.` is the required syntax and is replaced by `self.0`, `self.1`, etc.
 The placeholder tuple identifer is taken from the self type given to the implementation block. So, it
 is up to the user to chose any valid identifier.
+
+## Limitations
+
+The macro does not supports `for_tuples!` calls in a different macro, so stuff like
+`vec![ for_tuples!( bla ) ]` will generate invalid code.
 
 ## Example
 
@@ -114,7 +126,9 @@ use proc_macro2::{Span, TokenStream};
 
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input, token, Attribute, Ident, ItemImpl, ItemTrait, LitInt, Result,
+    parse_macro_input,
+    punctuated::Punctuated,
+    token, Attribute, Error, Ident, ItemImpl, ItemTrait, LitInt, Result,
 };
 
 mod full_automatic;
@@ -147,6 +161,50 @@ impl Parse for FullOrSemiAutomatic {
     }
 }
 
+/// The minimum and maximum given as two `LitInt`'s to the macro as arguments.
+struct MinMax {
+    min: Option<usize>,
+    max: usize,
+}
+
+impl Parse for MinMax {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let args = Punctuated::<LitInt, token::Comma>::parse_terminated(input)?;
+
+        if args.is_empty() {
+            Err(Error::new(
+                Span::call_site(),
+                "Expected at least one argument to the macro!",
+            ))
+        } else if args.len() == 1 {
+            Ok(Self {
+                max: args[0].base10_parse()?,
+                min: None,
+            })
+        } else if args.len() == 2 {
+            let min = args[0].base10_parse()?;
+            let max = args[1].base10_parse()?;
+
+            if min >= max {
+                Err(Error::new(
+                    Span::call_site(),
+                    "It is expected that `min` comes before `max` and that `max > min` is true!",
+                ))
+            } else {
+                Ok(Self {
+                    min: Some(min),
+                    max,
+                })
+            }
+        } else {
+            Err(Error::new(
+                Span::call_site(),
+                "Too many arguments given to the macro!",
+            ))
+        }
+    }
+}
+
 /// See [crate](index.html) documentation.
 #[proc_macro_attribute]
 pub fn impl_for_tuples(
@@ -154,24 +212,24 @@ pub fn impl_for_tuples(
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as FullOrSemiAutomatic);
-    let count = parse_macro_input!(args as LitInt);
+    let min_max = parse_macro_input!(args as MinMax);
 
-    impl_for_tuples_impl(input, count)
+    impl_for_tuples_impl(input, min_max)
         .unwrap_or_else(|e| e.to_compile_error())
         .into()
 }
 
-fn impl_for_tuples_impl(input: FullOrSemiAutomatic, count: LitInt) -> Result<TokenStream> {
-    let tuple_elements = (0usize..count.base10_parse()?)
+fn impl_for_tuples_impl(input: FullOrSemiAutomatic, min_max: MinMax) -> Result<TokenStream> {
+    let tuple_elements = (0usize..min_max.max)
         .map(|i| generate_tuple_element_ident(i))
         .collect::<Vec<_>>();
 
     match input {
         FullOrSemiAutomatic::Full(definition) => {
-            full_automatic::full_automatic_impl(definition, tuple_elements)
+            full_automatic::full_automatic_impl(definition, tuple_elements, min_max.min)
         }
         FullOrSemiAutomatic::Semi(trait_impl) => {
-            semi_automatic::semi_automatic_impl(trait_impl, tuple_elements)
+            semi_automatic::semi_automatic_impl(trait_impl, tuple_elements, min_max.min)
         }
     }
 }

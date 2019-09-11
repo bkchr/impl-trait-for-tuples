@@ -576,12 +576,13 @@ fn extract_tuple_placeholder_ident(trait_impl: &ItemImpl) -> Result<Ident> {
 pub fn semi_automatic_impl(
     trait_impl: ItemImpl,
     tuple_elements: Vec<Ident>,
+    min: Option<usize>,
 ) -> Result<TokenStream> {
     let placeholder_ident = extract_tuple_placeholder_ident(&trait_impl)?;
 
     let mut res = TokenStream::new();
 
-    (0..=tuple_elements.len())
+    (min.unwrap_or(0)..=tuple_elements.len())
         // We do not need to generate for the tuple with one element, as this is done automatically
         // by rust.
         .filter(|i| *i != 1)
