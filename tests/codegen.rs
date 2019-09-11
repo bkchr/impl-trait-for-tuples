@@ -48,6 +48,21 @@ fn full_automatic_accept_empty_tuple_return() {
 }
 
 #[test]
+fn accept_attributes() {
+    /// Hey, I'm an attribute!
+    #[cfg(test)]
+    #[impl_for_tuples(5)]
+    trait Attributes {}
+
+    trait Test {}
+
+    /// Hey, I'm an attribute!
+    #[cfg(test)]
+    #[impl_for_tuples(5)]
+    impl Test for Tuple {}
+}
+
+#[test]
 fn is_implemented_for_tuples_with_semi() {
     trait EmptyTrait {}
 

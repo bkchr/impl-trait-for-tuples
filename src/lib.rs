@@ -105,7 +105,7 @@ use proc_macro2::{Span, TokenStream};
 
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input, token, Ident, ItemImpl, ItemTrait, LitInt, Result,
+    parse_macro_input, token, Attribute, Ident, ItemImpl, ItemTrait, LitInt, Result,
 };
 
 mod full_automatic;
@@ -122,7 +122,11 @@ enum FullOrSemiAutomatic {
 
 impl Parse for FullOrSemiAutomatic {
     fn parse(input: ParseStream) -> Result<Self> {
-        let lookahead1 = input.lookahead1();
+        // We need to parse any attributes first, before we know what we actually can parse.
+        let fork = input.fork();
+        fork.call(Attribute::parse_outer)?;
+
+        let lookahead1 = fork.lookahead1();
 
         if lookahead1.peek(token::Impl) {
             Ok(Self::Semi(input.parse()?))
