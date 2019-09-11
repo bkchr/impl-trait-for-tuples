@@ -1,0 +1,10 @@
+error[E0277]: the trait bound `(Impl, Impl): Test` is not satisfied
+  --> $DIR/tuple_impls_less_than_minimum_does_not_exists.rs:10:5
+   |
+8  | fn test<T: Test>() {}
+   | ------------------ required by `test`
+9  | fn main() {
+10 |     test::<(Impl, Impl)>();
+   |     ^^^^^^^^^^^^^^^^^^^^ the trait `Test` is not implemented for `(Impl, Impl)`
+
+For more information about this error, try `rustc --explain E0277`.
