@@ -436,3 +436,24 @@ fn semi_automatic_with_custom_where_clause() {
         }
     }
 }
+
+#[test]
+fn for_tuples_in_nested_expr_works() {
+    trait Trait {
+        type Arg;
+        type Res;
+
+        fn test(arg: Self::Arg) -> Result<Self::Res, ()>;
+    }
+
+    #[impl_for_tuples(5)]
+    impl Trait for Tuple {
+        for_tuples!( where #( Tuple: Trait<Arg=u32> ),* );
+        type Arg = u32;
+        for_tuples!( type Res = ( #( Tuple::Res ),* ); );
+
+        fn test(arg: Self::Arg) -> Result<Self::Res, ()> {
+            Ok(for_tuples!( ( #( Tuple::test(arg)? ),* ) ))
+        }
+    }
+}

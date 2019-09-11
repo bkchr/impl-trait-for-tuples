@@ -445,6 +445,28 @@ impl<'a> ToTupleImplementation<'a> {
             Ok(res.to_token_stream())
         }
     }
+
+    /// Fold the expr and returns the folded expr and if it was a `for_tuples!`.
+    fn custom_fold_expr(&mut self, expr: Expr) -> (Expr, bool) {
+        match expr {
+            Expr::Macro(expr_macro) => match ForTuplesMacro::try_from(&expr_macro.mac, false) {
+                Ok(Some(for_tuples)) => (
+                    Expr::Verbatim(for_tuples.expand(
+                        &self.tuple_placeholder_ident,
+                        self.tuples,
+                        self.has_self_parameter,
+                    )),
+                    true,
+                ),
+                Ok(None) => (fold::fold_expr_macro(self, expr_macro).into(), false),
+                Err(e) => {
+                    self.errors.push(e);
+                    (Expr::Verbatim(Default::default()), false)
+                }
+            },
+            _ => (fold::fold_expr(self, expr), false),
+        }
+    }
 }
 
 impl<'a> Fold for ToTupleImplementation<'a> {
@@ -481,6 +503,10 @@ impl<'a> Fold for ToTupleImplementation<'a> {
         }
     }
 
+    fn fold_expr(&mut self, expr: Expr) -> Expr {
+        self.custom_fold_expr(expr).0
+    }
+
     fn fold_stmt(&mut self, stmt: Stmt) -> Stmt {
         let (expr, trailing_semi) = match stmt {
             Stmt::Expr(expr) => (expr, None),
@@ -488,24 +514,7 @@ impl<'a> Fold for ToTupleImplementation<'a> {
             _ => return fold::fold_stmt(self, stmt),
         };
 
-        let (expr, expanded) = match expr {
-            Expr::Macro(expr_macro) => match ForTuplesMacro::try_from(&expr_macro.mac, false) {
-                Ok(Some(for_tuples)) => (
-                    Expr::Verbatim(for_tuples.expand(
-                        &self.tuple_placeholder_ident,
-                        self.tuples,
-                        self.has_self_parameter,
-                    )),
-                    true,
-                ),
-                Ok(None) => (fold::fold_expr_macro(self, expr_macro).into(), false),
-                Err(e) => {
-                    self.errors.push(e);
-                    (Expr::Verbatim(Default::default()), false)
-                }
-            },
-            _ => (fold::fold_expr(self, expr), false),
-        };
+        let (expr, expanded) = self.custom_fold_expr(expr);
 
         if expanded {
             Stmt::Expr(expr)
