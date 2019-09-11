@@ -138,7 +138,7 @@ fn generate_generics(definition: &ItemTrait, tuple_elements: &[Ident]) -> Generi
             .for_each(|ty| where_clause.predicates.push(parse_quote!(#ty: Clone)));
     }
 
-    add_tuple_element_generics(tuple_elements, quote!(#name #ty_generics), &mut generics);
+    add_tuple_element_generics(tuple_elements, Some(quote!(#name #ty_generics)), &mut generics);
 
     generics
 }

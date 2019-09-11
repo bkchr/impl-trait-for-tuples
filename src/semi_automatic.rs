@@ -18,6 +18,10 @@ use syn::{
 
 use quote::{quote, ToTokens};
 
+/// By default we add the trait bound for the implemented trait to each tuple type. When this
+/// attribute is given we don't add this bound.
+const TUPLE_TYPES_NO_DEFAULT_TRAIT_BOUND: &str = "tuple_types_no_default_trait_bound";
+
 /// The `#( Tuple::test() ),*` (tuple repetition) syntax.
 struct TupleRepetition {
     pub pound_token: token::Pound,
@@ -378,7 +382,11 @@ impl ForTuplesMacro {
 }
 
 /// Add the tuple elements as generic parameters to the given trait implementation.
-fn add_tuple_elements_generics(tuples: &[Ident], mut trait_impl: ItemImpl) -> Result<ItemImpl> {
+fn add_tuple_elements_generics(
+    tuples: &[Ident],
+    mut trait_impl: ItemImpl,
+    add_bound: bool,
+) -> Result<ItemImpl> {
     let trait_ = trait_impl.trait_.clone().map(|t| t.1).ok_or_else(|| {
         Error::new(
             trait_impl.span(),
@@ -386,7 +394,12 @@ fn add_tuple_elements_generics(tuples: &[Ident], mut trait_impl: ItemImpl) -> Re
         )
     })?;
 
-    crate::utils::add_tuple_element_generics(tuples, quote!( #trait_ ), &mut trait_impl.generics);
+    let bound = if add_bound {
+        Some(quote!( #trait_ ))
+    } else {
+        None
+    };
+    crate::utils::add_tuple_element_generics(tuples, bound, &mut trait_impl.generics);
     Ok(trait_impl)
 }
 
@@ -421,9 +434,22 @@ impl<'a> ToTupleImplementation<'a> {
             custom_where_clause: None,
         };
 
-        let res = fold::fold_item_impl(&mut to_tuple, trait_impl.clone());
+        let mut res = fold::fold_item_impl(&mut to_tuple, trait_impl.clone());
+
+        // Check if we should add the bound to the implemented trait for each tuple type.
+        let add_bound = if let Some(pos) = res
+            .attrs
+            .iter()
+            .position(|a| a.path.is_ident(TUPLE_TYPES_NO_DEFAULT_TRAIT_BOUND))
+        {
+            res.attrs.remove(pos);
+            false
+        } else {
+            true
+        };
+
         // Add the tuple generics
-        let mut res = add_tuple_elements_generics(tuples, res)?;
+        let mut res = add_tuple_elements_generics(tuples, res, add_bound)?;
         // Add the correct self type
         res.self_ty = parse_quote!( ( #( #tuples ),* ) );
         res.attrs.push(parse_quote!(#[allow(unused)]));
