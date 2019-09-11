@@ -31,8 +31,9 @@ replaced by the corresponding tuple identifier per iteration.
 # use impl_trait_for_tuples::impl_for_tuples;
 trait Trait {
     type Ret;
+    type Arg;
 
-    fn test() -> Self::Ret;
+    fn test(arg: Self::Arg) -> Self::Ret;
 
     fn test_with_self(&self) -> Result<(), ()>;
 }
@@ -40,9 +41,10 @@ trait Trait {
 #[impl_for_tuples(5)]
 impl Trait for Tuple {
     for_tuples!( type Ret = ( #( Tuple::Ret ),* ); );
+    for_tuples!( type Arg = ( #( Tuple::Arg ),* ); );
 
-    fn test() -> Self::Ret {
-        for_tuples!( ( #( Tuple::test() ),* ) )
+    fn test(arg: Self::Arg) -> Self::Ret {
+        for_tuples!( ( #( Tuple::test(arg.Tuple) ),* ) )
     }
 
     fn test_with_self(&self) -> Result<(), ()> {

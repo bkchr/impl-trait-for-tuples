@@ -14,7 +14,8 @@ Attribute macro to implement a trait for tuples
 When wanting to implement a trait for combinations of tuples, Rust requires the trait to be implemented
 for each combination manually. With this crate you just need to place `#[impl_for_tuples(5)]` above
 your trait declaration (in full-automatic mode) to implement the trait for the tuple combinations
-`(), (T0, T1), (T0, T1, T2), (T0, T1, T2, T3), (T0, T1, T2, T3, T4, T5)`.
+`(), (T0, T1), (T0, T1, T2), (T0, T1, T2, T3), (T0, T1, T2, T3, T4, T5)`. The number of tuples is the
+parameter given to the attribute and can be chosen freely.
 
 This crate provides two modes full-automatic and semi-automatic. The full-automatic mode just requires
 the trait definition to implement the trait for the tuple combinations. While being much easier to
@@ -30,8 +31,9 @@ replaced by the corresponding tuple identifier per iteration.
 ```rust
 trait Trait {
     type Ret;
+    type Arg;
 
-    fn test() -> Self::Ret;
+    fn test(arg: Self::Arg) -> Self::Ret;
 
     fn test_with_self(&self) -> Result<(), ()>;
 }
@@ -39,9 +41,10 @@ trait Trait {
 #[impl_for_tuples(5)]
 impl Trait for Tuple {
     for_tuples!( type Ret = ( #( Tuple::Ret ),* ); );
+    for_tuples!( type Arg = ( #( Tuple::Arg ),* ); );
 
-    fn test() -> Self::Ret {
-        for_tuples!( ( #( Tuple::test() ),* ) )
+    fn test(arg: Self::Arg) -> Self::Ret {
+        for_tuples!( ( #( Tuple::test(arg.Tuple) ),* ) )
     }
 
     fn test_with_self(&self) -> Result<(), ()> {

@@ -400,3 +400,20 @@ fn trait_with_associated_type_and_self() {
     assert_eq!(5, counter);
     assert_eq!((1, 2, 3, 4, 5), res);
 }
+
+#[test]
+fn semi_automatic_tuple_access() {
+    trait Trait {
+        type Arg;
+
+        fn test(arg: Self::Arg);
+    }
+
+    #[impl_for_tuples(5)]
+    impl Trait for Tuple {
+        for_tuples!( type Arg = ( #( Tuple::Arg ),* ); );
+        fn test(arg: Self::Arg) {
+            for_tuples!( #( Tuple::test(arg.Tuple); )* )
+        }
+    }
+}

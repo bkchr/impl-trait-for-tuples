@@ -13,7 +13,7 @@ use syn::{
     parse_quote,
     spanned::Spanned,
     token, Block, Error, Expr, FnArg, Ident, ImplItem, ImplItemMethod, Index, ItemImpl, Macro,
-    Result, Stmt, Type,
+    Result, Stmt, Type, ExprField, Member,
 };
 
 use quote::{quote, ToTokens};
@@ -139,6 +139,17 @@ impl<'a> Fold for ReplaceTuplePlaceholder<'a> {
                 _ => fold::fold_expr_method_call(self, call).into(),
             },
             _ => fold::fold_expr(self, expr),
+        }
+    }
+
+    fn fold_expr_field(&mut self, mut expr: ExprField) -> ExprField {
+        match expr.member {
+            Member::Named(ref ident) if ident == self.search => {
+                // Replace `something.Tuple` with `something.0`, `something.1`, etc.
+                expr.member = Member::Unnamed(self.index.clone());
+                expr
+            },
+            _ => expr,
         }
     }
 }
