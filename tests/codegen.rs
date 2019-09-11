@@ -1,4 +1,4 @@
-use impl_trait_for_tuple::impl_for_tuples;
+use impl_trait_for_tuples::impl_for_tuples;
 
 #[test]
 fn is_implemented_for_tuples() {

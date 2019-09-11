@@ -1,5 +1,5 @@
 [package]
-name = "impl-trait-for-tuple"
+name = "impl-trait-for-tuples"
 version = "0.1.0"
 authors = ["Bastian Köcher <git@kchr.de>"]
 edition = "2018"
