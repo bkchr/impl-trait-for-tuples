@@ -12,8 +12,8 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_quote,
     spanned::Spanned,
-    token, Block, Error, Expr, FnArg, Ident, ImplItem, ImplItemMethod, Index, ItemImpl, Macro,
-    Result, Stmt, Type, ExprField, Member,
+    token, Block, Error, Expr, ExprField, FnArg, Ident, ImplItem, ImplItemMethod, Index, ItemImpl,
+    Macro, Member, Result, Stmt, Type, WhereClause, WherePredicate,
 };
 
 use quote::{quote, ToTokens};
@@ -23,26 +23,40 @@ struct TupleRepetition {
     pub pound_token: token::Pound,
     pub paren_token: token::Paren,
     pub stmts: Vec<Stmt>,
+    pub where_predicate: Option<WherePredicate>,
     pub comma_token: Option<token::Comma>,
     pub star_token: token::Star,
 }
 
-impl Parse for TupleRepetition {
-    fn parse(input: ParseStream) -> Result<Self> {
+impl TupleRepetition {
+    /// Parse the inner representation as stmts.
+    fn parse_as_stmts(input: ParseStream) -> Result<Self> {
         let content;
         Ok(Self {
             pound_token: input.parse()?,
             paren_token: parenthesized!(content in input),
             stmts: content.call(Block::parse_within)?,
+            where_predicate: None,
             comma_token: input.parse()?,
             star_token: input.parse()?,
         })
     }
-}
 
-impl TupleRepetition {
-    /// Expand this repetition to the actual implementation.
-    fn expand(
+    /// Parse the inner representation as a where predicate.
+    fn parse_as_where_predicate(input: ParseStream) -> Result<Self> {
+        let content;
+        Ok(Self {
+            pound_token: input.parse()?,
+            paren_token: parenthesized!(content in input),
+            stmts: Vec::new(),
+            where_predicate: Some(content.parse()?),
+            comma_token: input.parse()?,
+            star_token: input.parse()?,
+        })
+    }
+
+    /// Expand this repetition to the actual stmts implementation.
+    fn expand_as_stmts(
         self,
         tuple_placeholder_ident: &Ident,
         tuples: &[Ident],
@@ -69,6 +83,35 @@ impl TupleRepetition {
         }
 
         generated
+    }
+
+    /// Expand this to the given `where_clause`.
+    /// It is expected that the instance was created with `parse_as_where_predicate`.
+    fn expand_to_where_clause(
+        self,
+        tuple_placeholder_ident: &Ident,
+        tuples: &[Ident],
+        where_clause: &mut WhereClause,
+    ) -> Result<()> {
+        let span = self.pound_token.span();
+        let predicate = self.where_predicate.ok_or_else(|| {
+            Error::new(
+                span,
+                "Internal error, expected `where_predicate` to be set! Please report this issue!",
+            )
+        })?;
+
+        for tuple in tuples.iter() {
+            where_clause.predicates.push(
+                ReplaceTuplePlaceholder::replace_ident_in_where_predicate(
+                    tuple_placeholder_ident,
+                    tuple,
+                    predicate.clone(),
+                )?,
+            );
+        }
+
+        Ok(())
     }
 }
 
@@ -98,6 +141,31 @@ impl<'a> ReplaceTuplePlaceholder<'a> {
         };
 
         let res = fold::fold_stmt(&mut folder, stmt);
+
+        if let Some(first) = folder.errors.pop() {
+            Err(folder.errors.into_iter().fold(first, |mut e, n| {
+                e.combine(n);
+                e
+            }))
+        } else {
+            Ok(res)
+        }
+    }
+
+    fn replace_ident_in_where_predicate(
+        search: &'a Ident,
+        replace: &'a Ident,
+        where_predicate: WherePredicate,
+    ) -> Result<WherePredicate> {
+        let mut folder = Self {
+            search,
+            replace,
+            use_self: false,
+            index: 0.into(),
+            errors: Vec::new(),
+        };
+
+        let res = fold::fold_where_predicate(&mut folder, where_predicate);
 
         if let Some(first) = folder.errors.pop() {
             Err(folder.errors.into_iter().fold(first, |mut e, n| {
@@ -148,7 +216,7 @@ impl<'a> Fold for ReplaceTuplePlaceholder<'a> {
                 // Replace `something.Tuple` with `something.0`, `something.1`, etc.
                 expr.member = Member::Unnamed(self.index.clone());
                 expr
-            },
+            }
             _ => expr,
         }
     }
@@ -172,6 +240,11 @@ enum ForTuplesMacro {
     },
     /// Just the repetition stmt.
     Stmt { tuple_repetition: TupleRepetition },
+    /// A custom where clause.
+    Where {
+        _where_token: token::Where,
+        tuple_repetition: TupleRepetition,
+    },
 }
 
 impl Parse for ForTuplesMacro {
@@ -185,18 +258,23 @@ impl Parse for ForTuplesMacro {
                 ident: input.parse()?,
                 equal_token: input.parse()?,
                 paren_token: parenthesized!(content in input),
-                tuple_repetition: content.parse()?,
+                tuple_repetition: content.call(TupleRepetition::parse_as_stmts)?,
                 semi_token: input.parse()?,
             })
         } else if lookahead1.peek(token::Paren) {
             let content;
             Ok(ForTuplesMacro::StmtParenthesized {
                 paren_token: parenthesized!(content in input),
-                tuple_repetition: content.parse()?,
+                tuple_repetition: content.call(TupleRepetition::parse_as_stmts)?,
             })
         } else if lookahead1.peek(token::Pound) {
             Ok(ForTuplesMacro::Stmt {
-                tuple_repetition: input.parse()?,
+                tuple_repetition: input.call(TupleRepetition::parse_as_stmts)?,
+            })
+        } else if lookahead1.peek(token::Where) {
+            Ok(ForTuplesMacro::Where {
+                _where_token: input.parse()?,
+                tuple_repetition: input.call(TupleRepetition::parse_as_where_predicate)?,
             })
         } else {
             Err(lookahead1.error())
@@ -207,14 +285,43 @@ impl Parse for ForTuplesMacro {
 impl ForTuplesMacro {
     /// Try to parse the given macro as `Self`.
     ///
+    /// `allow_where` signals that a custom where clause is allowed at this position.
+    ///
     /// Returns `Ok(None)` if it is not a `for_tuples!` macro.
-    fn try_from(macro_item: &Macro) -> Result<Option<Self>> {
+    fn try_from(macro_item: &Macro, allow_where: bool) -> Result<Option<Self>> {
         // Not the macro we are searching for
         if !macro_item.path.is_ident("for_tuples") {
             return Ok(None);
         }
 
-        macro_item.parse_body().map(Some)
+        let res = macro_item.parse_body::<Self>()?;
+
+        if !allow_where && res.is_where() {
+            Err(Error::new(
+                macro_item.span(),
+                "Custom where clause not allowed at this position!",
+            ))
+        } else {
+            Ok(Some(res))
+        }
+    }
+
+    /// Is this a custom where clause?
+    fn is_where(&self) -> bool {
+        match self {
+            Self::Where { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// Convert this into the where clause tuple repetition.
+    fn into_where(self) -> Option<TupleRepetition> {
+        match self {
+            Self::Where {
+                tuple_repetition, ..
+            } => Some(tuple_repetition),
+            _ => None,
+        }
     }
 
     /// Expand `self` to the actual implementation without the `for_tuples!` macro.
@@ -240,7 +347,8 @@ impl ForTuplesMacro {
                 semi_token,
             } => {
                 let mut token_stream = type_token.to_token_stream();
-                let repetition = tuple_repetition.expand(tuple_placeholder_ident, tuples, use_self);
+                let repetition =
+                    tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self);
 
                 ident.to_tokens(&mut token_stream);
                 equal_token.to_tokens(&mut token_stream);
@@ -254,15 +362,17 @@ impl ForTuplesMacro {
                 tuple_repetition,
             } => {
                 let mut token_stream = TokenStream::new();
-                let repetition = tuple_repetition.expand(tuple_placeholder_ident, tuples, use_self);
+                let repetition =
+                    tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self);
 
                 paren_token.surround(&mut token_stream, |tokens| tokens.extend(repetition));
 
                 token_stream
             }
             Self::Stmt { tuple_repetition } => {
-                tuple_repetition.expand(tuple_placeholder_ident, tuples, use_self)
+                tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self)
             }
+            Self::Where { .. } => TokenStream::new(),
         }
     }
 }
@@ -292,6 +402,8 @@ struct ToTupleImplementation<'a> {
     errors: Vec<Error>,
     /// This is set to `true`, when folding in a function block that has a `self` parameter.
     has_self_parameter: bool,
+    /// A custom where clause provided by the user.
+    custom_where_clause: Option<TupleRepetition>,
 }
 
 impl<'a> ToTupleImplementation<'a> {
@@ -306,6 +418,7 @@ impl<'a> ToTupleImplementation<'a> {
             errors: Vec::new(),
             tuple_placeholder_ident,
             has_self_parameter: false,
+            custom_where_clause: None,
         };
 
         let res = fold::fold_item_impl(&mut to_tuple, trait_impl.clone());
@@ -314,6 +427,14 @@ impl<'a> ToTupleImplementation<'a> {
         // Add the correct self type
         res.self_ty = parse_quote!( ( #( #tuples ),* ) );
         res.attrs.push(parse_quote!(#[allow(unused)]));
+
+        if let Some(where_clause) = to_tuple.custom_where_clause.take() {
+            where_clause.expand_to_where_clause(
+                tuple_placeholder_ident,
+                tuples,
+                res.generics.make_where_clause(),
+            )?;
+        }
 
         if let Some(first_error) = to_tuple.errors.pop() {
             Err(to_tuple.errors.into_iter().fold(first_error, |mut e, n| {
@@ -329,12 +450,27 @@ impl<'a> ToTupleImplementation<'a> {
 impl<'a> Fold for ToTupleImplementation<'a> {
     fn fold_impl_item(&mut self, i: ImplItem) -> ImplItem {
         match i {
-            ImplItem::Macro(macro_item) => match ForTuplesMacro::try_from(&macro_item.mac) {
-                Ok(Some(for_tuples)) => ImplItem::Verbatim(for_tuples.expand(
-                    &self.tuple_placeholder_ident,
-                    self.tuples,
-                    false,
-                )),
+            ImplItem::Macro(macro_item) => match ForTuplesMacro::try_from(&macro_item.mac, true) {
+                Ok(Some(for_tuples)) => {
+                    if for_tuples.is_where() {
+                        if self.custom_where_clause.is_some() {
+                            self.errors.push(Error::new(
+                                macro_item.span(),
+                                "Only one custom where clause is supported!",
+                            ));
+                        } else {
+                            self.custom_where_clause = for_tuples.into_where();
+                        }
+
+                        ImplItem::Verbatim(Default::default())
+                    } else {
+                        ImplItem::Verbatim(for_tuples.expand(
+                            &self.tuple_placeholder_ident,
+                            self.tuples,
+                            false,
+                        ))
+                    }
+                }
                 Ok(None) => fold::fold_impl_item_macro(self, macro_item).into(),
                 Err(e) => {
                     self.errors.push(e);
@@ -353,7 +489,7 @@ impl<'a> Fold for ToTupleImplementation<'a> {
         };
 
         let (expr, expanded) = match expr {
-            Expr::Macro(expr_macro) => match ForTuplesMacro::try_from(&expr_macro.mac) {
+            Expr::Macro(expr_macro) => match ForTuplesMacro::try_from(&expr_macro.mac, false) {
                 Ok(Some(for_tuples)) => (
                     Expr::Verbatim(for_tuples.expand(
                         &self.tuple_placeholder_ident,
@@ -382,7 +518,7 @@ impl<'a> Fold for ToTupleImplementation<'a> {
 
     fn fold_type(&mut self, ty: Type) -> Type {
         match ty {
-            Type::Macro(ty_macro) => match ForTuplesMacro::try_from(&ty_macro.mac) {
+            Type::Macro(ty_macro) => match ForTuplesMacro::try_from(&ty_macro.mac, false) {
                 Ok(Some(for_tuples)) => Type::Verbatim(for_tuples.expand(
                     &self.tuple_placeholder_ident,
                     self.tuples,

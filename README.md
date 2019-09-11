@@ -32,6 +32,7 @@ replaced by the corresponding tuple identifier per iteration.
 trait Trait {
     type Ret;
     type Arg;
+    type FixedType;
 
     fn test(arg: Self::Arg) -> Self::Ret;
 
@@ -40,8 +41,14 @@ trait Trait {
 
 #[impl_for_tuples(5)]
 impl Trait for Tuple {
+    // Here we expand the `Ret` and `Arg` associated types.
     for_tuples!( type Ret = ( #( Tuple::Ret ),* ); );
     for_tuples!( type Arg = ( #( Tuple::Arg ),* ); );
+
+    // Here we set the `FixedType` to `u32` and add a custom where bound that forces the same
+    // `FixedType` for all tuple types.
+    type FixedType = u32;
+    for_tuples!( where #( Tuple: Trait<FixedType=u32> )* );
 
     fn test(arg: Self::Arg) -> Self::Ret {
         for_tuples!( ( #( Tuple::test(arg.Tuple) ),* ) )

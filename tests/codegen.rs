@@ -417,3 +417,22 @@ fn semi_automatic_tuple_access() {
         }
     }
 }
+
+#[test]
+fn semi_automatic_with_custom_where_clause() {
+    trait Trait {
+        type Arg;
+
+        fn test(arg: Self::Arg);
+    }
+
+    #[impl_for_tuples(5)]
+    impl Trait for Tuple {
+        for_tuples!( where #( Tuple: Trait<Arg=u32> ),* );
+        type Arg = u32;
+
+        fn test(arg: Self::Arg) {
+            for_tuples!( #( Tuple::test(arg); )* )
+        }
+    }
+}
