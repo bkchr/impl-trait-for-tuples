@@ -77,7 +77,10 @@ impl<'ast> Visit<'ast> for CheckTraitDeclaration {
     fn visit_return_type(&mut self, rt: &'ast ReturnType) {
         match rt {
             ReturnType::Default => {}
-            ReturnType::Type(_, _) => self.add_error(rt),
+            ReturnType::Type(_, ty) => match **ty {
+                Type::Tuple(ref tuple) if tuple.elems.is_empty() => {}
+                _ => self.add_error(rt),
+            },
         }
     }
 }

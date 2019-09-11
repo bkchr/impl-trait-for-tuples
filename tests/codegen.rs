@@ -40,6 +40,14 @@ fn is_implemented_for_tuples() {
 }
 
 #[test]
+fn full_automatic_accept_empty_tuple_return() {
+    #[impl_for_tuples(5)]
+    trait EmptyTupleReturn {
+        fn test() -> ();
+    }
+}
+
+#[test]
 fn is_implemented_for_tuples_with_semi() {
     trait EmptyTrait {}
 
