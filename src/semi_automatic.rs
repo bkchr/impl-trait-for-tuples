@@ -451,7 +451,7 @@ impl<'a> ToTupleImplementation<'a> {
         // Add the tuple generics
         let mut res = add_tuple_elements_generics(tuples, res, add_bound)?;
         // Add the correct self type
-        res.self_ty = parse_quote!( ( #( #tuples ),* ) );
+        res.self_ty = parse_quote!( ( #( #tuples, )* ) );
         res.attrs.push(parse_quote!(#[allow(unused)]));
 
         if let Some(where_clause) = to_tuple.custom_where_clause.take() {
@@ -617,18 +617,14 @@ pub fn semi_automatic_impl(
 
     let mut res = TokenStream::new();
 
-    (min.unwrap_or(0)..=tuple_elements.len())
-        // We do not need to generate for the tuple with one element, as this is done automatically
-        // by rust.
-        .filter(|i| *i != 1)
-        .try_for_each(|i| {
-            res.extend(ToTupleImplementation::generate_implementation(
-                &trait_impl,
-                &placeholder_ident,
-                &tuple_elements[..i],
-            )?);
-            Ok::<_, Error>(())
-        })?;
+    (min.unwrap_or(0)..=tuple_elements.len()).try_for_each(|i| {
+        res.extend(ToTupleImplementation::generate_implementation(
+            &trait_impl,
+            &placeholder_ident,
+            &tuple_elements[..i],
+        )?);
+        Ok::<_, Error>(())
+    })?;
 
     Ok(res)
 }

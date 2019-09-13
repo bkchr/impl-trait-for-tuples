@@ -29,7 +29,6 @@ pub fn full_automatic_impl(
     check_trait_declaration(&definition)?;
 
     let impls = (min.unwrap_or(0)..=tuple_elements.len())
-        .filter(|i| *i != 1)
         .map(|i| generate_tuple_impl(&definition, &tuple_elements[0..i]));
 
     Ok(quote!(
@@ -99,7 +98,7 @@ fn generate_tuple_impl(definition: &ItemTrait, tuple_elements: &[Ident]) -> Toke
 
     quote!(
         #[allow(unused)]
-        #unsafety impl #impl_generics #name #ty_generics for ( #( #tuple_elements ),* ) #where_clause {
+        #unsafety impl #impl_generics #name #ty_generics for ( #( #tuple_elements, )* ) #where_clause {
             #( #fns )*
         }
     )
@@ -138,7 +137,11 @@ fn generate_generics(definition: &ItemTrait, tuple_elements: &[Ident]) -> Generi
             .for_each(|ty| where_clause.predicates.push(parse_quote!(#ty: Clone)));
     }
 
-    add_tuple_element_generics(tuple_elements, Some(quote!(#name #ty_generics)), &mut generics);
+    add_tuple_element_generics(
+        tuple_elements,
+        Some(quote!(#name #ty_generics)),
+        &mut generics,
+    );
 
     generics
 }
