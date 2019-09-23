@@ -71,7 +71,7 @@ impl Trait for Tuple {
 ```
 
 The given example shows all supported combinations of `for_tuples!`. When accessing a method from the
-`self` tuple instance, `Tuple.` is the required syntax and is replaced by `self.0`, `self.1`, etc.
+`self` tuple instance, `self.Tuple` is the required syntax and is replaced by `self.0`, `self.1`, etc.
 The placeholder tuple identifer is taken from the self type given to the implementation block. So, it
 is up to the user to chose any valid identifier.
 
