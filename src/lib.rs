@@ -75,6 +75,9 @@ The given example shows all supported combinations of `for_tuples!`. When access
 The placeholder tuple identifer is taken from the self type given to the implementation block. So, it
 is up to the user to chose any valid identifier.
 
+The separator given to `#( Tuple::something() )SEPARATOR*` can be chosen from `,`, `+`, `-`,
+`*`, `/`, `|`, `&` or nothing for no separator.
+
 By adding the `#[tuple_types_no_default_trait_bound]` above the impl block, the macro will not add the
 automatic bound to the implemented trait for each tuple type.
 

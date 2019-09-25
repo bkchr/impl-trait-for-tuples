@@ -457,3 +457,47 @@ fn for_tuples_in_nested_expr_works() {
         }
     }
 }
+
+#[test]
+fn test_separators() {
+    trait Trait {
+        fn plus() -> u32;
+        fn minus() -> i32;
+        fn star() -> u32;
+    }
+
+    #[impl_for_tuples(1, 5)]
+    impl Trait for Tuple {
+        fn plus() -> u32 {
+            for_tuples!( #( Tuple::plus() )+* )
+        }
+
+        fn minus() -> i32 {
+            for_tuples!( #( Tuple::minus() )-* )
+        }
+
+        fn star() -> u32 {
+            for_tuples!( #( Tuple::star() )** )
+        }
+    }
+
+    struct Impl;
+
+    impl Trait for Impl {
+        fn plus() -> u32 {
+            5
+        }
+
+        fn minus() -> i32 {
+            1000
+        }
+
+        fn star() -> u32 {
+            5
+        }
+    }
+
+    assert_eq!(<(Impl, Impl, Impl)>::plus(), 15);
+    assert_eq!(<(Impl, Impl, Impl)>::star(), 125);
+    assert_eq!(<(Impl, Impl, Impl)>::minus(), -1000);
+}

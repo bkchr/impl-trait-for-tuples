@@ -22,13 +22,82 @@ use quote::{quote, ToTokens};
 /// attribute is given we don't add this bound.
 const TUPLE_TYPES_NO_DEFAULT_TRAIT_BOUND: &str = "tuple_types_no_default_trait_bound";
 
-/// The `#( Tuple::test() ),*` (tuple repetition) syntax.
+/// The supported separators in the `#( Tuple::test() )SEPARATOR*` syntax.
+enum Separator {
+    Comma(token::Comma),
+    Add(token::Add),
+    Sub(token::Sub),
+    Or(token::Or),
+    And(token::And),
+    Star(token::Star),
+    Div(token::Div),
+}
+
+impl Separator {
+    /// Try to parse the separator before the `*` token.
+    fn parse_before_star(input: ParseStream) -> Result<Option<Self>> {
+        if input.peek2(token::Star) {
+            Self::parse(input).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Convert into a `TokenStream`.
+    ///
+    /// `last` - Is this the last separator to add? Only `,` will be added on `last == true`.
+    fn to_token_stream(&self, last: bool) -> TokenStream {
+        let empty_on_last = |token: &dyn ToTokens| {
+            if last {
+                TokenStream::default()
+            } else {
+                token.to_token_stream()
+            }
+        };
+
+        match self {
+            Self::Comma(comma) => comma.to_token_stream(),
+            Self::Add(add) => empty_on_last(add),
+            Self::Sub(sub) => empty_on_last(sub),
+            Self::Or(or) => empty_on_last(or),
+            Self::And(and) => empty_on_last(and),
+            Self::Star(star) => empty_on_last(star),
+            Self::Div(div) => empty_on_last(div),
+        }
+    }
+}
+
+impl Parse for Separator {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let lookahead1 = input.lookahead1();
+
+        if lookahead1.peek(token::Comma) {
+            Ok(Self::Comma(input.parse()?))
+        } else if lookahead1.peek(token::Add) {
+            Ok(Self::Add(input.parse()?))
+        } else if lookahead1.peek(token::Sub) {
+            Ok(Self::Sub(input.parse()?))
+        } else if lookahead1.peek(token::Or) {
+            Ok(Self::Or(input.parse()?))
+        } else if lookahead1.peek(token::And) {
+            Ok(Self::And(input.parse()?))
+        } else if lookahead1.peek(token::Star) {
+            Ok(Self::Star(input.parse()?))
+        } else if lookahead1.peek(token::Div) {
+            Ok(Self::Div(input.parse()?))
+        } else {
+            Err(lookahead1.error())
+        }
+    }
+}
+
+/// The `#( Tuple::test() )SEPARATOR*` (tuple repetition) syntax.
 struct TupleRepetition {
     pub pound_token: token::Pound,
     pub paren_token: token::Paren,
     pub stmts: Vec<Stmt>,
     pub where_predicate: Option<WherePredicate>,
-    pub comma_token: Option<token::Comma>,
+    pub separator: Option<Separator>,
     pub star_token: token::Star,
 }
 
@@ -41,7 +110,7 @@ impl TupleRepetition {
             paren_token: parenthesized!(content in input),
             stmts: content.call(Block::parse_within)?,
             where_predicate: None,
-            comma_token: input.parse()?,
+            separator: Separator::parse_before_star(input)?,
             star_token: input.parse()?,
         })
     }
@@ -54,7 +123,7 @@ impl TupleRepetition {
             paren_token: parenthesized!(content in input),
             stmts: Vec::new(),
             where_predicate: Some(content.parse()?),
-            comma_token: input.parse()?,
+            separator: Separator::parse_before_star(input)?,
             star_token: input.parse()?,
         })
     }
@@ -81,8 +150,8 @@ impl TupleRepetition {
                 .unwrap_or_else(|e| e.to_compile_error())
             }));
 
-            if let Some(ref comma) = self.comma_token {
-                generated.extend(comma.to_token_stream());
+            if let Some(ref sep) = self.separator {
+                generated.extend(sep.to_token_stream(i + 1 == tuples.len()));
             }
         }
 
