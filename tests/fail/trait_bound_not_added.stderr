@@ -7,7 +7,7 @@ error[E0046]: not all trait items implemented, missing: `test`
 15 | impl Test for Impl {}
    | ^^^^^^^^^^^^^^^^^^ missing `test` in implementation
 
-error[E0599]: no function or associated item named `test` found for type `TupleElement0` in the current scope
+error[E0599]: no function or associated item named `test` found for type parameter `TupleElement0` in the current scope
  --> $DIR/trait_bound_not_added.rs:9:32
   |
 9 |         for_tuples!( #( Tuple::test(); )* )
@@ -19,7 +19,7 @@ help: the following trait defines an item `test`, perhaps you need to restrict t
 5 | TupleElement0: Test
   |
 
-error[E0599]: no function or associated item named `test` found for type `TupleElement1` in the current scope
+error[E0599]: no function or associated item named `test` found for type parameter `TupleElement1` in the current scope
  --> $DIR/trait_bound_not_added.rs:9:32
   |
 9 |         for_tuples!( #( Tuple::test(); )* )
@@ -31,7 +31,7 @@ help: the following trait defines an item `test`, perhaps you need to restrict t
 5 | TupleElement1: Test
   |
 
-error[E0599]: no function or associated item named `test` found for type `TupleElement2` in the current scope
+error[E0599]: no function or associated item named `test` found for type parameter `TupleElement2` in the current scope
  --> $DIR/trait_bound_not_added.rs:9:32
   |
 9 |         for_tuples!( #( Tuple::test(); )* )
@@ -43,7 +43,7 @@ help: the following trait defines an item `test`, perhaps you need to restrict t
 5 | TupleElement2: Test
   |
 
-error[E0599]: no function or associated item named `test` found for type `TupleElement3` in the current scope
+error[E0599]: no function or associated item named `test` found for type parameter `TupleElement3` in the current scope
  --> $DIR/trait_bound_not_added.rs:9:32
   |
 9 |         for_tuples!( #( Tuple::test(); )* )
@@ -55,7 +55,7 @@ help: the following trait defines an item `test`, perhaps you need to restrict t
 5 | TupleElement3: Test
   |
 
-error[E0599]: no function or associated item named `test` found for type `TupleElement4` in the current scope
+error[E0599]: no function or associated item named `test` found for type parameter `TupleElement4` in the current scope
  --> $DIR/trait_bound_not_added.rs:9:32
   |
 9 |         for_tuples!( #( Tuple::test(); )* )
@@ -66,6 +66,3 @@ help: the following trait defines an item `test`, perhaps you need to restrict t
   |
 5 | TupleElement4: Test
   |
-
-Some errors have detailed explanations: E0046, E0599.
-For more information about an error, try `rustc --explain E0046`.
