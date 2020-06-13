@@ -2,4 +2,4 @@ error: Not supported by full-automatic tuple implementation. Use semi-automatic 
  --> $DIR/no_const_value.rs:3:2
   |
 3 |     const Test: u32;
-  |     ^^^^^^^^^^^^^^^^
+  |     ^^^^^
