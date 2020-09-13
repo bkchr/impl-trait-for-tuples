@@ -2,4 +2,4 @@ error: Not supported by full-automatic tuple implementation. Use semi-automatic 
  --> $DIR/no_return_value.rs:3:15
   |
 3 |     fn test() -> u32;
-  |               ^^
+  |               ^^^^^^
