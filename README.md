@@ -82,7 +82,6 @@ automatic bound to the implemented trait for each tuple type.
 
 The trait bound can be customized using `#[tuple_types_custom_trait_bound(NewBound)]`.
 The new bound will be used instead of the impleted trait for each tuple type.
-Currently advanced bounds, e.g. Trait + Clone, are unsupported.
 
 ## Limitations
 

@@ -477,6 +477,23 @@ struct ToTupleImplementation<'a> {
     custom_where_clause: Option<TupleRepetition>,
 }
 
+// Struct to parse custom trait bounds
+#[derive(Debug)]
+struct BoundsStruct {
+    paren_token: token::Paren,
+    bounds: syn::TypeTraitObject,
+}
+
+impl Parse for BoundsStruct {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let content;
+        Ok(BoundsStruct {
+            paren_token: parenthesized!(content in input),
+            bounds: content.parse()?,
+        })
+    }
+}
+
 impl<'a> ToTupleImplementation<'a> {
     /// Generate the tuple implementation for the given `tuples`.
     fn generate_implementation(
@@ -507,16 +524,20 @@ impl<'a> ToTupleImplementation<'a> {
             .iter()
             .position(|a| a.path.is_ident(TUPLE_TYPES_CUSTOM_TRAIT_BOUND))
         {
+            // Parse custom trait bound
             let attr = &res.attrs[pos];
-            let trait_name = match attr.parse_meta().map_err(|e| {
-                Error::new(
-                    e.span(),
-                    "Invalid trait bound, advanced trait bounds are unsupported",
-                )
-            })? {
-                syn::Meta::List(list) => list.nested.first().unwrap().clone(),
-                _ => return Err(Error::new(trait_impl.span(), "Invalid Trait Bound")),
+            let input = attr.tokens.to_token_stream();
+            let result = syn::parse2::<BoundsStruct>(input);
+            let trait_name = match result {
+                Ok(b) => b.bounds,
+                Err(e) => {
+                    return Err(Error::new(
+                        e.span(),
+                        format!("Invalid trait bound: {}", e.to_string()),
+                    ))
+                }
             };
+
             res.attrs.remove(pos);
             quote! { #trait_name }
         } else {

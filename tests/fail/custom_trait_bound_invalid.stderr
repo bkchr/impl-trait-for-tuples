@@ -1,8 +1,8 @@
-error: Invalid trait bound, advanced trait bounds are unsupported
-  --> $DIR/custom_trait_bound_invalid.rs:14:41
+error: Invalid trait bound: unexpected token
+  --> $DIR/custom_trait_bound_invalid.rs:14:40
    |
-14 | #[tuple_types_custom_trait_bound(Custom + Clone)]
-   |                                         ^
+14 | #[tuple_types_custom_trait_bound(Custom, Clone)]
+   |                                        ^
 
 error[E0277]: the trait bound `(Impl, Impl): Test` is not satisfied
   --> $DIR/custom_trait_bound_invalid.rs:32:12

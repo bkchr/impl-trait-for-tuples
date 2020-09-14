@@ -11,7 +11,7 @@ trait Custom {
 }
 
 #[impl_trait_for_tuples::impl_for_tuples(5)]
-#[tuple_types_custom_trait_bound(Custom + Clone)]
+#[tuple_types_custom_trait_bound(Custom, Clone)]
 impl Test for Tuple {
     for_tuples!( type Arg = ( #( Tuple::NewArg ),* ); );
     fn test(arg: Self::Arg) {
