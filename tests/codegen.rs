@@ -501,3 +501,59 @@ fn test_separators() {
     assert_eq!(<(Impl, Impl, Impl)>::star(), 125);
     assert_eq!(<(Impl, Impl, Impl)>::minus(), -1000);
 }
+
+#[test]
+fn semi_automatic_tuple_with_custom_trait_bound() {
+    trait Trait {
+        type Arg;
+
+        fn test(arg: Self::Arg);
+    }
+
+    trait Custom {
+        type NewArg;
+
+        fn new_test(arg: Self::NewArg);
+    }
+
+    #[impl_for_tuples(5)]
+    #[tuple_types_custom_trait_bound(Custom)]
+    impl Trait for Tuple {
+        for_tuples!( type Arg = ( #( Tuple::NewArg ),* ); );
+        fn test(arg: Self::Arg) {
+            for_tuples!( #( Tuple::new_test(arg.Tuple); )* );
+        }
+    }
+}
+
+#[test]
+fn semi_automatic_tuple_with_custom_advanced_trait_bound() {
+    trait Trait {
+        type Arg;
+        type Output;
+
+        fn test(arg: Self::Arg);
+        fn clone_test(&self) -> Self::Output;
+    }
+
+    trait Custom {
+        type NewArg;
+
+        fn new_test(arg: Self::NewArg);
+    }
+
+    #[impl_for_tuples(5)]
+    #[tuple_types_custom_trait_bound(Custom + Clone)]
+    impl Trait for Tuple {
+        for_tuples!( type Arg = ( #( Tuple::NewArg ),* ); );
+        for_tuples!( type Output = ( #( Tuple ),* ); );
+
+        fn test(arg: Self::Arg) {
+            for_tuples!( #( Tuple::new_test(arg.Tuple); )* );
+        }
+
+        fn clone_test(&self) -> Self::Output {
+            for_tuples!( ( #( Tuple.clone() ),* ) );
+        }
+    }
+}

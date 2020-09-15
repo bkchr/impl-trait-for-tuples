@@ -2,4 +2,4 @@ error: Not supported by full-automatic tuple implementation. Use semi-automatic 
  --> $DIR/no_type_parameter.rs:3:2
   |
 3 |     type Test;
-  |     ^^^^
+  |     ^^^^^^^^^^

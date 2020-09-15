@@ -80,6 +80,9 @@ The separator given to `#( Tuple::something() )SEPARATOR*` can be chosen from `,
 By adding the `#[tuple_types_no_default_trait_bound]` above the impl block, the macro will not add the
 automatic bound to the implemented trait for each tuple type.
 
+The trait bound can be customized using `#[tuple_types_custom_trait_bound(NewBound)]`.
+The new bound will be used instead of the impleted trait for each tuple type.
+
 ## Limitations
 
 The macro does not supports `for_tuples!` calls in a different macro, so stuff like

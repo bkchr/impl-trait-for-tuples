@@ -21,6 +21,7 @@ use quote::{quote, ToTokens};
 /// By default we add the trait bound for the implemented trait to each tuple type. When this
 /// attribute is given we don't add this bound.
 const TUPLE_TYPES_NO_DEFAULT_TRAIT_BOUND: &str = "tuple_types_no_default_trait_bound";
+const TUPLE_TYPES_CUSTOM_TRAIT_BOUND: &str = "tuple_types_custom_trait_bound";
 
 /// The supported separators in the `#( Tuple::test() )SEPARATOR*` syntax.
 enum Separator {
@@ -454,20 +455,8 @@ impl ForTuplesMacro {
 fn add_tuple_elements_generics(
     tuples: &[Ident],
     mut trait_impl: ItemImpl,
-    add_bound: bool,
+    bound: Option<TokenStream>,
 ) -> Result<ItemImpl> {
-    let trait_ = trait_impl.trait_.clone().map(|t| t.1).ok_or_else(|| {
-        Error::new(
-            trait_impl.span(),
-            "The semi-automatic implementation is required to implement a trait!",
-        )
-    })?;
-
-    let bound = if add_bound {
-        Some(quote!( #trait_ ))
-    } else {
-        None
-    };
     crate::utils::add_tuple_element_generics(tuples, bound, &mut trait_impl.generics);
     Ok(trait_impl)
 }
@@ -488,6 +477,23 @@ struct ToTupleImplementation<'a> {
     custom_where_clause: Option<TupleRepetition>,
 }
 
+// Struct to parse custom trait bounds
+#[derive(Debug)]
+struct BoundsStruct {
+    paren_token: token::Paren,
+    bounds: syn::TypeTraitObject,
+}
+
+impl Parse for BoundsStruct {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let content;
+        Ok(BoundsStruct {
+            paren_token: parenthesized!(content in input),
+            bounds: content.parse()?,
+        })
+    }
+}
+
 impl<'a> ToTupleImplementation<'a> {
     /// Generate the tuple implementation for the given `tuples`.
     fn generate_implementation(
@@ -505,6 +511,39 @@ impl<'a> ToTupleImplementation<'a> {
 
         let mut res = fold::fold_item_impl(&mut to_tuple, trait_impl.clone());
 
+        let default_trait = trait_impl.trait_.clone().map(|t| t.1).ok_or_else(|| {
+            Error::new(
+                trait_impl.span(),
+                "The semi-automatic implementation is required to implement a trait!",
+            )
+        })?;
+
+        // Check if we should customize the trait bound
+        let trait_ = if let Some(pos) = res
+            .attrs
+            .iter()
+            .position(|a| a.path.is_ident(TUPLE_TYPES_CUSTOM_TRAIT_BOUND))
+        {
+            // Parse custom trait bound
+            let attr = &res.attrs[pos];
+            let input = attr.tokens.to_token_stream();
+            let result = syn::parse2::<BoundsStruct>(input);
+            let trait_name = match result {
+                Ok(b) => b.bounds,
+                Err(e) => {
+                    return Err(Error::new(
+                        e.span(),
+                        format!("Invalid trait bound: {}", e.to_string()),
+                    ))
+                }
+            };
+
+            res.attrs.remove(pos);
+            quote! { #trait_name }
+        } else {
+            quote! { #default_trait }
+        };
+
         // Check if we should add the bound to the implemented trait for each tuple type.
         let add_bound = if let Some(pos) = res
             .attrs
@@ -512,9 +551,9 @@ impl<'a> ToTupleImplementation<'a> {
             .position(|a| a.path.is_ident(TUPLE_TYPES_NO_DEFAULT_TRAIT_BOUND))
         {
             res.attrs.remove(pos);
-            false
+            None
         } else {
-            true
+            Some(trait_)
         };
 
         // Add the tuple generics
