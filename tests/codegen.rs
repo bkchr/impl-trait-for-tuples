@@ -557,3 +557,20 @@ fn semi_automatic_tuple_with_custom_advanced_trait_bound() {
         }
     }
 }
+
+#[test]
+fn semi_automatic_tuple_as_ref() {
+    trait Trait {
+        type Arg;
+
+        fn test(arg: Self::Arg);
+    }
+
+    #[impl_for_tuples(5)]
+    impl Trait for &Tuple {
+        for_tuples!( type Arg = ( #( Tuple::Arg ),* ); );
+        fn test(arg: Self::Arg) {
+            for_tuples!( #( Tuple::test(arg.Tuple); )* )
+        }
+    }
+}

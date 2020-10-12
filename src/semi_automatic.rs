@@ -500,6 +500,7 @@ impl<'a> ToTupleImplementation<'a> {
         trait_impl: &ItemImpl,
         tuple_placeholder_ident: &'a Ident,
         tuples: &'a [Ident],
+        ref_tuples: bool,
     ) -> Result<TokenStream> {
         let mut to_tuple = ToTupleImplementation {
             tuples,
@@ -559,7 +560,11 @@ impl<'a> ToTupleImplementation<'a> {
         // Add the tuple generics
         let mut res = add_tuple_elements_generics(tuples, res, add_bound)?;
         // Add the correct self type
-        res.self_ty = parse_quote!( ( #( #tuples, )* ) );
+        if ref_tuples {
+            res.self_ty = parse_quote!( ( #( &#tuples, )* ) );
+        } else {
+            res.self_ty = parse_quote!( ( #( #tuples, )* ) );
+        };
         res.attrs.push(parse_quote!(#[allow(unused)]));
 
         if let Some(where_clause) = to_tuple.custom_where_clause.take() {
@@ -702,11 +707,21 @@ impl<'a> Fold for ToTupleImplementation<'a> {
 }
 
 /// Extracts the tuple placeholder ident from the given trait implementation.
-fn extract_tuple_placeholder_ident(trait_impl: &ItemImpl) -> Result<Ident> {
-    if let Type::Path(ref type_path) = *trait_impl.self_ty {
-        if let Some(ident) = type_path.path.get_ident() {
-            return Ok(ident.clone());
+fn extract_tuple_placeholder_ident(trait_impl: &ItemImpl) -> Result<(bool, Ident)> {
+    match *trait_impl.self_ty {
+        Type::Reference(ref type_ref) => {
+            if let Type::Path(ref type_path) = *type_ref.elem {
+                if let Some(ident) = type_path.path.get_ident() {
+                    return Ok((true, ident.clone()));
+                }
+            }
         }
+        Type::Path(ref type_path) => {
+            if let Some(ident) = type_path.path.get_ident() {
+                return Ok((false, ident.clone()));
+            }
+        }
+        _ => {}
     }
 
     Err(Error::new(
@@ -728,8 +743,9 @@ pub fn semi_automatic_impl(
     (min.unwrap_or(0)..=tuple_elements.len()).try_for_each(|i| {
         res.extend(ToTupleImplementation::generate_implementation(
             &trait_impl,
-            &placeholder_ident,
+            &placeholder_ident.1,
             &tuple_elements[..i],
+            placeholder_ident.0,
         )?);
         Ok::<_, Error>(())
     })?;
