@@ -708,18 +708,20 @@ impl<'a> Fold for ToTupleImplementation<'a> {
 
 /// Extracts the tuple placeholder ident from the given trait implementation.
 fn extract_tuple_placeholder_ident(trait_impl: &ItemImpl) -> Result<(bool, Ident)> {
-    if let Type::Reference(ref type_ref) = *trait_impl.self_ty {
-        if let Type::Path(ref type_path) = *type_ref.elem {
-            if let Some(ident) = type_path.path.get_ident() {
-                return Ok((true, ident.clone()));
+    match *trait_impl.self_ty {
+        Type::Reference(ref type_ref) => {
+            if let Type::Path(ref type_path) = *type_ref.elem {
+                if let Some(ident) = type_path.path.get_ident() {
+                    return Ok((true, ident.clone()));
+                }
             }
         }
-    }
-
-    if let Type::Path(ref type_path) = *trait_impl.self_ty {
-        if let Some(ident) = type_path.path.get_ident() {
-            return Ok((false, ident.clone()));
+        Type::Path(ref type_path) => {
+            if let Some(ident) = type_path.path.get_ident() {
+                return Ok((false, ident.clone()));
+            }
         }
+        _ => {}
     }
 
     Err(Error::new(
