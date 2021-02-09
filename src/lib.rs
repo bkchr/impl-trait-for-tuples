@@ -40,17 +40,19 @@ trait Trait {
     type Ret;
     type Arg;
     type FixedType;
+    const VALUE: u32;
 
     fn test(arg: Self::Arg) -> Self::Ret;
 
     fn test_with_self(&self) -> Result<(), ()>;
 }
 
-#[impl_for_tuples(5)]
+#[impl_for_tuples(1, 5)]
 impl Trait for Tuple {
     // Here we expand the `Ret` and `Arg` associated types.
     for_tuples!( type Ret = ( #( Tuple::Ret ),* ); );
     for_tuples!( type Arg = ( #( Tuple::Arg ),* ); );
+    for_tuples!( const VALUE: u32 = #( Tuple::VALUE )+*; );
 
     // Here we set the `FixedType` to `u32` and add a custom where bound that forces the same
     // `FixedType` for all tuple types.

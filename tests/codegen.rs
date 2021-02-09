@@ -12,7 +12,7 @@ fn is_implemented_for_tuples() {
     fn test<T: EmptyTrait>() {}
 
     test::<()>();
-    test::<(EmptyTraitImpl)>();
+    test::<EmptyTraitImpl>();
     test::<(EmptyTraitImpl, EmptyTraitImpl, EmptyTraitImpl)>();
     test::<(
         EmptyTraitImpl,
@@ -76,7 +76,7 @@ fn is_implemented_for_tuples_with_semi() {
     fn test<T: EmptyTrait>() {}
 
     test::<()>();
-    test::<(EmptyTraitImpl)>();
+    test::<EmptyTraitImpl>();
     test::<(EmptyTraitImpl, EmptyTraitImpl, EmptyTraitImpl)>();
     test::<(
         EmptyTraitImpl,
@@ -195,7 +195,7 @@ fn trait_with_static_functions_and_generics() {
     assert_eq!(0, counter);
 
     let mut counter = 0;
-    test::<(Impl)>(&mut counter);
+    test::<Impl>(&mut counter);
     assert_eq!(1, counter);
 
     let mut counter = 0;
@@ -239,7 +239,7 @@ fn trait_with_return_type() {
     assert_eq!(0, counter);
 
     let mut counter = 0;
-    test::<(Impl)>(&mut counter);
+    test::<Impl>(&mut counter);
     assert_eq!(1, counter);
 
     let mut counter = 0;
@@ -286,7 +286,7 @@ fn trait_with_associated_type() {
     assert_eq!((), res);
 
     let mut counter = 0;
-    let res = test::<(Impl)>(&mut counter);
+    let res = test::<Impl>(&mut counter);
     assert_eq!(1, counter);
     assert_eq!((1), res);
 
@@ -336,7 +336,7 @@ fn trait_with_associated_type_and_generics() {
     assert_eq!((), res);
 
     let mut counter = 0;
-    let res = test::<(Impl)>(&mut counter);
+    let res = test::<Impl>(&mut counter);
     assert_eq!(1, counter);
     assert_eq!((1), res);
 
@@ -573,4 +573,43 @@ fn semi_automatic_tuple_as_ref() {
             for_tuples!( #( Tuple::test(arg.Tuple); )* )
         }
     }
+}
+
+#[test]
+fn semi_automatic_associated_const() {
+    trait Trait {
+        const TYPE: &'static [u32];
+    }
+
+    trait Trait2 {
+        const TYPE: u32;
+    }
+
+    #[impl_for_tuples(1, 5)]
+    #[tuple_types_no_default_trait_bound]
+    impl Trait for Tuple {
+        for_tuples!( where #( Tuple: Trait2 )* );
+
+        for_tuples!( const TYPE: &'static [u32] = &[ #( Tuple::TYPE ),* ]; );
+    }
+}
+
+#[test]
+fn semi_automatic_associated_const_calculation() {
+    trait Trait {
+        const TYPE: u32;
+    }
+
+    #[impl_for_tuples(1, 5)]
+    impl Trait for Tuple {
+        for_tuples!( const TYPE: u32 = #( Tuple::TYPE )+*; );
+    }
+
+    struct Test;
+    impl Trait for Test {
+        const TYPE: u32 = 1;
+    }
+
+    assert_eq!(3, <(Test, Test, Test)>::TYPE);
+    assert_eq!(1, Test::TYPE);
 }

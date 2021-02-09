@@ -7,6 +7,7 @@
 use proc_macro2::TokenStream;
 
 use syn::{
+    bracketed,
     fold::{self, Fold},
     parenthesized,
     parse::{Parse, ParseStream},
@@ -296,15 +297,86 @@ impl<'a> Fold for ReplaceTuplePlaceholder<'a> {
     }
 }
 
+/// The expression of a const item.
+enum ConstExpr {
+    /// repetition
+    Simple { tuple_repetition: TupleRepetition },
+    /// &[ repetition ]
+    RefArray {
+        and_token: token::And,
+        bracket_token: token::Bracket,
+        tuple_repetition: TupleRepetition,
+    },
+}
+
+impl ConstExpr {
+    /// Expand `self` into a [`TokenStream`].
+    fn expand(
+        self,
+        tuple_placeholder_ident: &Ident,
+        tuples: &[Ident],
+        use_self: bool,
+    ) -> TokenStream {
+        match self {
+            Self::Simple { tuple_repetition } => {
+                tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self)
+            }
+            Self::RefArray {
+                and_token,
+                bracket_token,
+                tuple_repetition,
+            } => {
+                let repetition =
+                    tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self);
+
+                let mut token_stream = and_token.to_token_stream();
+                bracket_token.surround(&mut token_stream, |tokens| tokens.extend(repetition));
+                token_stream
+            }
+        }
+    }
+}
+
+impl Parse for ConstExpr {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let lookahead1 = input.lookahead1();
+
+        if lookahead1.peek(token::And) {
+            let content;
+            Ok(ConstExpr::RefArray {
+                and_token: input.parse()?,
+                bracket_token: bracketed!(content in input),
+                tuple_repetition: content.call(TupleRepetition::parse_as_stmts)?,
+            })
+        } else if lookahead1.peek(token::Pound) {
+            Ok(ConstExpr::Simple {
+                tuple_repetition: TupleRepetition::parse_as_stmts(input)?,
+            })
+        } else {
+            Err(lookahead1.error())
+        }
+    }
+}
+
 /// The `for_tuples!` macro syntax.
 enum ForTuplesMacro {
-    /// The macro at an item position.
-    Item {
+    /// The macro at an item type position.
+    ItemType {
         type_token: token::Type,
         ident: Ident,
         equal_token: token::Eq,
         paren_token: token::Paren,
         tuple_repetition: TupleRepetition,
+        semi_token: token::Semi,
+    },
+    /// The macro at an item const position.
+    ItemConst {
+        const_token: token::Const,
+        ident: Ident,
+        colon_token: token::Colon,
+        const_type: Type,
+        equal_token: token::Eq,
+        expr: ConstExpr,
         semi_token: token::Semi,
     },
     /// The repetition stmt wrapped in parenthesis.
@@ -327,12 +399,22 @@ impl Parse for ForTuplesMacro {
 
         if lookahead1.peek(token::Type) {
             let content;
-            Ok(ForTuplesMacro::Item {
+            Ok(ForTuplesMacro::ItemType {
                 type_token: input.parse()?,
                 ident: input.parse()?,
                 equal_token: input.parse()?,
                 paren_token: parenthesized!(content in input),
                 tuple_repetition: content.call(TupleRepetition::parse_as_stmts)?,
+                semi_token: input.parse()?,
+            })
+        } else if lookahead1.peek(token::Const) {
+            Ok(ForTuplesMacro::ItemConst {
+                const_token: input.parse()?,
+                ident: input.parse()?,
+                colon_token: input.parse()?,
+                const_type: input.parse()?,
+                equal_token: input.parse()?,
+                expr: input.parse()?,
                 semi_token: input.parse()?,
             })
         } else if lookahead1.peek(token::Paren) {
@@ -382,10 +464,7 @@ impl ForTuplesMacro {
 
     /// Is this a custom where clause?
     fn is_where(&self) -> bool {
-        match self {
-            Self::Where { .. } => true,
-            _ => false,
-        }
+        matches!(self, Self::Where { .. })
     }
 
     /// Convert this into the where clause tuple repetition.
@@ -412,7 +491,7 @@ impl ForTuplesMacro {
         use_self: bool,
     ) -> TokenStream {
         match self {
-            Self::Item {
+            Self::ItemType {
                 type_token,
                 ident,
                 equal_token,
@@ -427,6 +506,26 @@ impl ForTuplesMacro {
                 ident.to_tokens(&mut token_stream);
                 equal_token.to_tokens(&mut token_stream);
                 paren_token.surround(&mut token_stream, |tokens| tokens.extend(repetition));
+                semi_token.to_tokens(&mut token_stream);
+
+                token_stream
+            }
+            Self::ItemConst {
+                const_token,
+                ident,
+                colon_token,
+                const_type,
+                equal_token,
+                expr,
+                semi_token,
+            } => {
+                let mut token_stream = const_token.to_token_stream();
+
+                ident.to_tokens(&mut token_stream);
+                colon_token.to_tokens(&mut token_stream);
+                const_type.to_tokens(&mut token_stream);
+                equal_token.to_tokens(&mut token_stream);
+                token_stream.extend(expr.expand(tuple_placeholder_ident, tuples, use_self));
                 semi_token.to_tokens(&mut token_stream);
 
                 token_stream
