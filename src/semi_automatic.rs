@@ -103,10 +103,10 @@ enum Repetition {
 /// The `#( Tuple::test() )SEPARATOR*` (tuple repetition) syntax.
 struct TupleRepetition {
     pub pound_token: token::Pound,
-    pub paren_token: token::Paren,
+    pub _paren_token: token::Paren,
     pub repetition: Repetition,
     pub separator: Option<Separator>,
-    pub star_token: token::Star,
+    pub _star_token: token::Star,
 }
 
 impl TupleRepetition {
@@ -115,10 +115,10 @@ impl TupleRepetition {
         let content;
         Ok(Self {
             pound_token: input.parse()?,
-            paren_token: parenthesized!(content in input),
+            _paren_token: parenthesized!(content in input),
             repetition: Repetition::Stmts(content.call(Block::parse_within)?),
             separator: Separator::parse_before_star(input)?,
-            star_token: input.parse()?,
+            _star_token: input.parse()?,
         })
     }
 
@@ -127,10 +127,10 @@ impl TupleRepetition {
         let content;
         Ok(Self {
             pound_token: input.parse()?,
-            paren_token: parenthesized!(content in input),
+            _paren_token: parenthesized!(content in input),
             repetition: Repetition::Where(content.parse()?),
             separator: Separator::parse_before_star(input)?,
-            star_token: input.parse()?,
+            _star_token: input.parse()?,
         })
     }
 
@@ -139,10 +139,10 @@ impl TupleRepetition {
         let content;
         Ok(Self {
             pound_token: input.parse()?,
-            paren_token: parenthesized!(content in input),
+            _paren_token: parenthesized!(content in input),
             repetition: Repetition::Type(content.parse()?),
             separator: Separator::parse_before_star(input)?,
-            star_token: input.parse()?,
+            _star_token: input.parse()?,
         })
     }
 
@@ -530,7 +530,7 @@ impl ForTuplesMacro {
             return Ok(None);
         }
 
-        let res = macro_item.parse_body::<Self>().map_err(|e| dbg!(e))?;
+        let res = macro_item.parse_body::<Self>()?;
 
         if !allow_where && res.is_where() {
             Err(Error::new(
@@ -676,7 +676,7 @@ struct ToTupleImplementation<'a> {
 // Struct to parse custom trait bounds
 #[derive(Debug)]
 struct BoundsStruct {
-    paren_token: token::Paren,
+    _paren_token: token::Paren,
     bounds: syn::TypeTraitObject,
 }
 
@@ -684,7 +684,7 @@ impl Parse for BoundsStruct {
     fn parse(input: ParseStream) -> Result<Self> {
         let content;
         Ok(BoundsStruct {
-            paren_token: parenthesized!(content in input),
+            _paren_token: parenthesized!(content in input),
             bounds: content.parse()?,
         })
     }
