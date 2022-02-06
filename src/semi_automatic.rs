@@ -93,12 +93,18 @@ impl Parse for Separator {
     }
 }
 
+/// The different kind of repetitions that can be found in a [`TupleRepetition`].
+enum Repetition {
+    Stmts(Vec<Stmt>),
+    Type(Type),
+    Where(WherePredicate),
+}
+
 /// The `#( Tuple::test() )SEPARATOR*` (tuple repetition) syntax.
 struct TupleRepetition {
     pub pound_token: token::Pound,
     pub paren_token: token::Paren,
-    pub stmts: Vec<Stmt>,
-    pub where_predicate: Option<WherePredicate>,
+    pub repetition: Repetition,
     pub separator: Option<Separator>,
     pub star_token: token::Star,
 }
@@ -110,8 +116,7 @@ impl TupleRepetition {
         Ok(Self {
             pound_token: input.parse()?,
             paren_token: parenthesized!(content in input),
-            stmts: content.call(Block::parse_within)?,
-            where_predicate: None,
+            repetition: Repetition::Stmts(content.call(Block::parse_within)?),
             separator: Separator::parse_before_star(input)?,
             star_token: input.parse()?,
         })
@@ -123,8 +128,19 @@ impl TupleRepetition {
         Ok(Self {
             pound_token: input.parse()?,
             paren_token: parenthesized!(content in input),
-            stmts: Vec::new(),
-            where_predicate: Some(content.parse()?),
+            repetition: Repetition::Where(content.parse()?),
+            separator: Separator::parse_before_star(input)?,
+            star_token: input.parse()?,
+        })
+    }
+
+    /// Parse the inner representation as a type.
+    fn parse_as_type(input: ParseStream) -> Result<Self> {
+        let content;
+        Ok(Self {
+            pound_token: input.parse()?,
+            paren_token: parenthesized!(content in input),
+            repetition: Repetition::Type(content.parse()?),
             separator: Separator::parse_before_star(input)?,
             star_token: input.parse()?,
         })
@@ -136,11 +152,19 @@ impl TupleRepetition {
         tuple_placeholder_ident: &Ident,
         tuples: &[Ident],
         use_self: bool,
-    ) -> TokenStream {
+    ) -> Result<TokenStream> {
         let mut generated = TokenStream::new();
+        let span = self.pound_token.span();
+        let stmts = match self.repetition {
+            Repetition::Stmts(stmts) => stmts,
+            _ => return Err(Error::new(
+                span,
+                "Internal error, expected `repetition` to be of type `Stmts`! Please report this issue!",
+            )),
+        };
 
         for (i, tuple) in tuples.iter().enumerate() {
-            generated.extend(self.stmts.iter().cloned().map(|s| {
+            generated.extend(stmts.iter().cloned().map(|s| {
                 ReplaceTuplePlaceholder::replace_ident_in_stmt(
                     tuple_placeholder_ident,
                     tuple,
@@ -157,7 +181,38 @@ impl TupleRepetition {
             }
         }
 
-        generated
+        Ok(generated)
+    }
+
+    /// Expand this repetition to the actual type declaration.
+    fn expand_as_type_declaration(
+        self,
+        tuple_placeholder_ident: &Ident,
+        tuples: &[Ident],
+    ) -> Result<TokenStream> {
+        let mut generated = TokenStream::new();
+        let span = self.pound_token.span();
+        let ty = match self.repetition {
+            Repetition::Type(ty) => ty,
+            _ => return Err(Error::new(
+                span,
+                "Internal error, expected `repetition` to be of type `Type`! Please report this issue!",
+            )),
+        };
+
+        for (i, tuple) in tuples.iter().enumerate() {
+            generated.extend(
+                ReplaceTuplePlaceholder::replace_ident_in_type(tuple_placeholder_ident, tuple, ty.clone())
+                    .map(|s| s.to_token_stream())
+                    .unwrap_or_else(|e| e.to_compile_error()),
+            );
+
+            if let Some(ref sep) = self.separator {
+                generated.extend(sep.to_token_stream(i + 1 == tuples.len()));
+            }
+        }
+
+        Ok(generated)
     }
 
     /// Expand this to the given `where_clause`.
@@ -169,12 +224,13 @@ impl TupleRepetition {
         where_clause: &mut WhereClause,
     ) -> Result<()> {
         let span = self.pound_token.span();
-        let predicate = self.where_predicate.ok_or_else(|| {
-            Error::new(
+        let predicate = match self.repetition {
+            Repetition::Where(pred) => pred,
+            _ => return Err(Error::new(
                 span,
-                "Internal error, expected `where_predicate` to be set! Please report this issue!",
-            )
-        })?;
+                "Internal error, expected `repetition` to be of type `Where`! Please report this issue!",
+            )),
+        };
 
         for tuple in tuples.iter() {
             where_clause.predicates.push(
@@ -200,6 +256,7 @@ struct ReplaceTuplePlaceholder<'a> {
 }
 
 impl<'a> ReplaceTuplePlaceholder<'a> {
+    /// Replace the given `replace` ident in the given `stmt`.
     fn replace_ident_in_stmt(
         search: &'a Ident,
         replace: &'a Ident,
@@ -227,6 +284,29 @@ impl<'a> ReplaceTuplePlaceholder<'a> {
         }
     }
 
+    /// Replace the given `replace` ident in the given `type_`.
+    fn replace_ident_in_type(search: &'a Ident, replace: &'a Ident, type_: Type) -> Result<Type> {
+        let mut folder = Self {
+            search,
+            replace,
+            use_self: false,
+            index: 0.into(),
+            errors: Vec::new(),
+        };
+
+        let res = fold::fold_type(&mut folder, type_);
+
+        if let Some(first) = folder.errors.pop() {
+            Err(folder.errors.into_iter().fold(first, |mut e, n| {
+                e.combine(n);
+                e
+            }))
+        } else {
+            Ok(res)
+        }
+    }
+
+    /// Replace the given `replace` ident in the given `where_predicate`.
     fn replace_ident_in_where_predicate(
         search: &'a Ident,
         replace: &'a Ident,
@@ -316,7 +396,7 @@ impl ConstExpr {
         tuple_placeholder_ident: &Ident,
         tuples: &[Ident],
         use_self: bool,
-    ) -> TokenStream {
+    ) -> Result<TokenStream> {
         match self {
             Self::Simple { tuple_repetition } => {
                 tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self)
@@ -327,11 +407,11 @@ impl ConstExpr {
                 tuple_repetition,
             } => {
                 let repetition =
-                    tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self);
+                    tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self)?;
 
                 let mut token_stream = and_token.to_token_stream();
                 bracket_token.surround(&mut token_stream, |tokens| tokens.extend(repetition));
-                token_stream
+                Ok(token_stream)
             }
         }
     }
@@ -404,7 +484,7 @@ impl Parse for ForTuplesMacro {
                 ident: input.parse()?,
                 equal_token: input.parse()?,
                 paren_token: parenthesized!(content in input),
-                tuple_repetition: content.call(TupleRepetition::parse_as_stmts)?,
+                tuple_repetition: content.call(TupleRepetition::parse_as_type)?,
                 semi_token: input.parse()?,
             })
         } else if lookahead1.peek(token::Const) {
@@ -450,7 +530,7 @@ impl ForTuplesMacro {
             return Ok(None);
         }
 
-        let res = macro_item.parse_body::<Self>()?;
+        let res = macro_item.parse_body::<Self>().map_err(|e| dbg!(e))?;
 
         if !allow_where && res.is_where() {
             Err(Error::new(
@@ -501,12 +581,17 @@ impl ForTuplesMacro {
             } => {
                 let mut token_stream = type_token.to_token_stream();
                 let repetition =
-                    tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self);
+                    tuple_repetition.expand_as_type_declaration(tuple_placeholder_ident, tuples);
 
-                ident.to_tokens(&mut token_stream);
-                equal_token.to_tokens(&mut token_stream);
-                paren_token.surround(&mut token_stream, |tokens| tokens.extend(repetition));
-                semi_token.to_tokens(&mut token_stream);
+                match repetition {
+                    Ok(rep) => {
+                        ident.to_tokens(&mut token_stream);
+                        equal_token.to_tokens(&mut token_stream);
+                        paren_token.surround(&mut token_stream, |tokens| tokens.extend(rep));
+                        semi_token.to_tokens(&mut token_stream);
+                    }
+                    Err(e) => token_stream.extend(e.to_compile_error()),
+                }
 
                 token_stream
             }
@@ -521,12 +606,19 @@ impl ForTuplesMacro {
             } => {
                 let mut token_stream = const_token.to_token_stream();
 
-                ident.to_tokens(&mut token_stream);
-                colon_token.to_tokens(&mut token_stream);
-                const_type.to_tokens(&mut token_stream);
-                equal_token.to_tokens(&mut token_stream);
-                token_stream.extend(expr.expand(tuple_placeholder_ident, tuples, use_self));
-                semi_token.to_tokens(&mut token_stream);
+                let expr = expr.expand(tuple_placeholder_ident, tuples, use_self);
+
+                match expr {
+                    Ok(expr) => {
+                        ident.to_tokens(&mut token_stream);
+                        colon_token.to_tokens(&mut token_stream);
+                        const_type.to_tokens(&mut token_stream);
+                        equal_token.to_tokens(&mut token_stream);
+                        token_stream.extend(expr);
+                        semi_token.to_tokens(&mut token_stream);
+                    }
+                    Err(e) => token_stream.extend(e.to_compile_error()),
+                }
 
                 token_stream
             }
@@ -538,13 +630,18 @@ impl ForTuplesMacro {
                 let repetition =
                     tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self);
 
-                paren_token.surround(&mut token_stream, |tokens| tokens.extend(repetition));
+                match repetition {
+                    Ok(rep) => {
+                        paren_token.surround(&mut token_stream, |tokens| tokens.extend(rep))
+                    }
+                    Err(e) => token_stream.extend(e.to_compile_error()),
+                }
 
                 token_stream
             }
-            Self::Stmt { tuple_repetition } => {
-                tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self)
-            }
+            Self::Stmt { tuple_repetition } => tuple_repetition
+                .expand_as_stmts(tuple_placeholder_ident, tuples, use_self)
+                .unwrap_or_else(|e| e.to_compile_error()),
             Self::Where { .. } => TokenStream::new(),
         }
     }

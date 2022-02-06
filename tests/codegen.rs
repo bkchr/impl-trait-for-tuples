@@ -613,3 +613,17 @@ fn semi_automatic_associated_const_calculation() {
     assert_eq!(3, <(Test, Test, Test)>::TYPE);
     assert_eq!(1, Test::TYPE);
 }
+
+#[test]
+fn semi_automatic_associated_type() {
+    trait Trait {
+        type A;
+        type B;
+    }
+
+    #[impl_for_tuples(1, 5)]
+    impl Trait for Tuple {
+        for_tuples!( type A = ( #( Option< Tuple::B > ),* ); );
+        for_tuples!( type B = ( #( Tuple::B ),* ); );
+    }
+}
