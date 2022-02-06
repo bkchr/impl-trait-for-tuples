@@ -160,6 +160,11 @@ impl Parse for FullOrSemiAutomatic {
         let fork = input.fork();
         fork.call(Attribute::parse_outer)?;
 
+        // If there is a `unsafe` in front of, just skip it.
+        if fork.peek(token::Unsafe) {
+            fork.parse::<token::Unsafe>()?;
+        }
+
         let lookahead1 = fork.lookahead1();
 
         if lookahead1.peek(token::Impl) {

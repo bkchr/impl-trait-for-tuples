@@ -48,6 +48,14 @@ fn full_automatic_accept_empty_tuple_return() {
 }
 
 #[test]
+fn full_automatic_unsafe_trait() {
+    #[impl_for_tuples(5)]
+    unsafe trait UnsafeTrait {
+        fn test();
+    }
+}
+
+#[test]
 fn accept_attributes() {
     /// Hey, I'm an attribute!
     #[cfg(test)]
@@ -621,9 +629,21 @@ fn semi_automatic_associated_type() {
         type B;
     }
 
-    #[impl_for_tuples(1, 5)]
+    #[impl_for_tuples(5)]
     impl Trait for Tuple {
         for_tuples!( type A = ( #( Option< Tuple::B > ),* ); );
         for_tuples!( type B = ( #( Tuple::B ),* ); );
+    }
+}
+
+#[test]
+fn semi_automatic_unsafe_trait() {
+    unsafe trait Trait {
+        type A;
+    }
+
+    #[impl_for_tuples(5)]
+    unsafe impl Trait for Tuple {
+        for_tuples!( type A = ( #( Tuple::A ),* ); );
     }
 }
