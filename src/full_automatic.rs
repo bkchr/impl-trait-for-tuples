@@ -62,8 +62,7 @@ impl CheckTraitDeclaration {
     }
 }
 
-const CHECK_ERROR_MSG: &str =
-    "Not supported by full-automatic tuple implementation. \
+const CHECK_ERROR_MSG: &str = "Not supported by full-automatic tuple implementation. \
      Use semi-automatic tuple implementation for more control of the implementation.";
 
 impl<'ast> Visit<'ast> for CheckTraitDeclaration {

@@ -7,7 +7,14 @@
 use proc_macro2::TokenStream;
 
 use syn::{
-    bracketed, fold::{self, Fold}, parenthesized, parse::{Parse, ParseStream}, parse_quote, spanned::Spanned, token, Block, Error, Expr, ExprField, FnArg, Ident, ImplItem, ImplItemFn, Index, ItemImpl, Macro, Member, Meta, Result, Stmt, Type, WhereClause, WherePredicate
+    bracketed,
+    fold::{self, Fold},
+    parenthesized,
+    parse::{Parse, ParseStream},
+    parse_quote,
+    spanned::Spanned,
+    token, Block, Error, Expr, ExprField, FnArg, Ident, ImplItem, ImplItemFn, Index, ItemImpl,
+    Macro, Member, Meta, Result, Stmt, Type, WhereClause, WherePredicate,
 };
 
 use quote::{quote, ToTokens};
@@ -195,9 +202,13 @@ impl TupleRepetition {
 
         for (i, tuple) in tuples.iter().enumerate() {
             generated.extend(
-                ReplaceTuplePlaceholder::replace_ident_in_type(tuple_placeholder_ident, tuple, ty.clone())
-                    .map(|s| s.to_token_stream())
-                    .unwrap_or_else(|e| e.to_compile_error()),
+                ReplaceTuplePlaceholder::replace_ident_in_type(
+                    tuple_placeholder_ident,
+                    tuple,
+                    ty.clone(),
+                )
+                .map(|s| s.to_token_stream())
+                .unwrap_or_else(|e| e.to_compile_error()),
             );
 
             if let Some(ref sep) = self.separator {
@@ -624,9 +635,7 @@ impl ForTuplesMacro {
                     tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self);
 
                 match repetition {
-                    Ok(rep) => {
-                        paren_token.surround(&mut token_stream, |tokens| tokens.extend(rep))
-                    }
+                    Ok(rep) => paren_token.surround(&mut token_stream, |tokens| tokens.extend(rep)),
                     Err(e) => token_stream.extend(e.to_compile_error()),
                 }
 
@@ -703,9 +712,9 @@ impl<'a> ToTupleImplementation<'a> {
                 return Err(Error::new(
                     attr.span(),
                     "Expected #[tuple_types_custom_trait_bound($trait_bounds)]",
-                ))
+                ));
             };
-            
+
             let input = items.tokens.to_token_stream();
             let result = syn::parse2::<syn::TypeTraitObject>(input);
             let trait_name = match result {
@@ -830,13 +839,23 @@ impl<'a> Fold for ToTupleImplementation<'a> {
             Stmt::Expr(expr, semi) => {
                 let (expr, expanded) = self.custom_fold_expr(expr);
                 Stmt::Expr(expr, if expanded { None } else { semi })
-            },
+            }
             Stmt::Macro(macro_stmt) => {
-                let expr = Expr::Macro(syn::ExprMacro { mac: macro_stmt.mac, attrs: macro_stmt.attrs });
+                let expr = Expr::Macro(syn::ExprMacro {
+                    mac: macro_stmt.mac,
+                    attrs: macro_stmt.attrs,
+                });
                 let (expr, expanded) = self.custom_fold_expr(expr);
-                Stmt::Expr(expr, if expanded { None } else { macro_stmt.semi_token })
-            },
-            _ => fold::fold_stmt(self, stmt)
+                Stmt::Expr(
+                    expr,
+                    if expanded {
+                        None
+                    } else {
+                        macro_stmt.semi_token
+                    },
+                )
+            }
+            _ => fold::fold_stmt(self, stmt),
         }
     }
 
