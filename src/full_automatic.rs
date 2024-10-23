@@ -15,7 +15,7 @@ use syn::{
     spanned::Spanned,
     visit::{self, Visit},
     Error, FnArg, Generics, Ident, Index, ItemTrait, Pat, Result, ReturnType, Signature, TraitItem,
-    TraitItemMethod, Type,
+    TraitItemFn, Type,
 };
 
 use quote::quote;
@@ -69,7 +69,7 @@ const CHECK_ERROR_MSG: &str =
 impl<'ast> Visit<'ast> for CheckTraitDeclaration {
     fn visit_trait_item(&mut self, ti: &'ast TraitItem) {
         match ti {
-            TraitItem::Method(m) => visit::visit_trait_item_method(self, m),
+            TraitItem::Fn(f) => visit::visit_trait_item_fn(self, f),
             _ => self.add_error(ti),
         }
     }
@@ -92,7 +92,7 @@ fn generate_tuple_impl(definition: &ItemTrait, tuple_elements: &[Ident]) -> Toke
     let ty_generics = definition.generics.split_for_impl().1;
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     let fns = definition.items.iter().filter_map(|i| match i {
-        TraitItem::Method(method) => Some(generate_delegate_method(method, tuple_elements)),
+        TraitItem::Fn(f) => Some(generate_delegate_method(f, tuple_elements)),
         _ => None,
     });
 
@@ -110,6 +110,9 @@ struct CollectNonReferenceArgTypes {
 }
 
 impl<'ast> Visit<'ast> for CollectNonReferenceArgTypes {
+    fn visit_receiver(&mut self, _: &'ast syn::Receiver) {
+        // Do nothing: explicitly ignore any receiver type.
+    }
     fn visit_type(&mut self, ty: &'ast Type) {
         if !is_reference_type(ty) {
             self.result.push(ty.clone());
@@ -146,7 +149,7 @@ fn generate_generics(definition: &ItemTrait, tuple_elements: &[Ident]) -> Generi
     generics
 }
 
-fn generate_delegate_method(method: &TraitItemMethod, tuple_elements: &[Ident]) -> TokenStream {
+fn generate_delegate_method(method: &TraitItemFn, tuple_elements: &[Ident]) -> TokenStream {
     let name = repeat(&method.sig.ident);
     let self_arg = method
         .sig
