@@ -13,8 +13,8 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_quote,
     spanned::Spanned,
-    token, Block, Error, Expr, ExprField, FnArg, Ident, ImplItem, ImplItemMethod, Index, ItemImpl,
-    Macro, Member, Result, Stmt, Type, WhereClause, WherePredicate,
+    token, Block, Error, Expr, ExprField, FnArg, Ident, ImplItem, ImplItemFn, Index, ItemImpl,
+    Macro, Member, Meta, Result, Stmt, Type, WhereClause, WherePredicate,
 };
 
 use quote::{quote, ToTokens};
@@ -27,12 +27,12 @@ const TUPLE_TYPES_CUSTOM_TRAIT_BOUND: &str = "tuple_types_custom_trait_bound";
 /// The supported separators in the `#( Tuple::test() )SEPARATOR*` syntax.
 enum Separator {
     Comma(token::Comma),
-    Add(token::Add),
-    Sub(token::Sub),
+    Plus(token::Plus),
+    Minus(token::Minus),
     Or(token::Or),
     And(token::And),
     Star(token::Star),
-    Div(token::Div),
+    Slash(token::Slash),
 }
 
 impl Separator {
@@ -59,12 +59,12 @@ impl Separator {
 
         match self {
             Self::Comma(comma) => comma.to_token_stream(),
-            Self::Add(add) => empty_on_last(add),
-            Self::Sub(sub) => empty_on_last(sub),
+            Self::Plus(add) => empty_on_last(add),
+            Self::Minus(sub) => empty_on_last(sub),
             Self::Or(or) => empty_on_last(or),
             Self::And(and) => empty_on_last(and),
             Self::Star(star) => empty_on_last(star),
-            Self::Div(div) => empty_on_last(div),
+            Self::Slash(div) => empty_on_last(div),
         }
     }
 }
@@ -75,18 +75,18 @@ impl Parse for Separator {
 
         if lookahead1.peek(token::Comma) {
             Ok(Self::Comma(input.parse()?))
-        } else if lookahead1.peek(token::Add) {
-            Ok(Self::Add(input.parse()?))
-        } else if lookahead1.peek(token::Sub) {
-            Ok(Self::Sub(input.parse()?))
+        } else if lookahead1.peek(token::Plus) {
+            Ok(Self::Plus(input.parse()?))
+        } else if lookahead1.peek(token::Minus) {
+            Ok(Self::Minus(input.parse()?))
         } else if lookahead1.peek(token::Or) {
             Ok(Self::Or(input.parse()?))
         } else if lookahead1.peek(token::And) {
             Ok(Self::And(input.parse()?))
         } else if lookahead1.peek(token::Star) {
             Ok(Self::Star(input.parse()?))
-        } else if lookahead1.peek(token::Div) {
-            Ok(Self::Div(input.parse()?))
+        } else if lookahead1.peek(token::Slash) {
+            Ok(Self::Slash(input.parse()?))
         } else {
             Err(lookahead1.error())
         }
@@ -202,9 +202,13 @@ impl TupleRepetition {
 
         for (i, tuple) in tuples.iter().enumerate() {
             generated.extend(
-                ReplaceTuplePlaceholder::replace_ident_in_type(tuple_placeholder_ident, tuple, ty.clone())
-                    .map(|s| s.to_token_stream())
-                    .unwrap_or_else(|e| e.to_compile_error()),
+                ReplaceTuplePlaceholder::replace_ident_in_type(
+                    tuple_placeholder_ident,
+                    tuple,
+                    ty.clone(),
+                )
+                .map(|s| s.to_token_stream())
+                .unwrap_or_else(|e| e.to_compile_error()),
             );
 
             if let Some(ref sep) = self.separator {
@@ -631,9 +635,7 @@ impl ForTuplesMacro {
                     tuple_repetition.expand_as_stmts(tuple_placeholder_ident, tuples, use_self);
 
                 match repetition {
-                    Ok(rep) => {
-                        paren_token.surround(&mut token_stream, |tokens| tokens.extend(rep))
-                    }
+                    Ok(rep) => paren_token.surround(&mut token_stream, |tokens| tokens.extend(rep)),
                     Err(e) => token_stream.extend(e.to_compile_error()),
                 }
 
@@ -673,23 +675,6 @@ struct ToTupleImplementation<'a> {
     custom_where_clause: Option<TupleRepetition>,
 }
 
-// Struct to parse custom trait bounds
-#[derive(Debug)]
-struct BoundsStruct {
-    _paren_token: token::Paren,
-    bounds: syn::TypeTraitObject,
-}
-
-impl Parse for BoundsStruct {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let content;
-        Ok(BoundsStruct {
-            _paren_token: parenthesized!(content in input),
-            bounds: content.parse()?,
-        })
-    }
-}
-
 impl<'a> ToTupleImplementation<'a> {
     /// Generate the tuple implementation for the given `tuples`.
     fn generate_implementation(
@@ -719,14 +704,21 @@ impl<'a> ToTupleImplementation<'a> {
         let trait_ = if let Some(pos) = res
             .attrs
             .iter()
-            .position(|a| a.path.is_ident(TUPLE_TYPES_CUSTOM_TRAIT_BOUND))
+            .position(|a| a.path().is_ident(TUPLE_TYPES_CUSTOM_TRAIT_BOUND))
         {
             // Parse custom trait bound
             let attr = &res.attrs[pos];
-            let input = attr.tokens.to_token_stream();
-            let result = syn::parse2::<BoundsStruct>(input);
+            let Meta::List(items) = &attr.meta else {
+                return Err(Error::new(
+                    attr.span(),
+                    "Expected #[tuple_types_custom_trait_bound($trait_bounds)]",
+                ));
+            };
+
+            let input = items.tokens.to_token_stream();
+            let result = syn::parse2::<syn::TypeTraitObject>(input);
             let trait_name = match result {
-                Ok(b) => b.bounds,
+                Ok(bounds) => bounds,
                 Err(e) => {
                     return Err(Error::new(
                         e.span(),
@@ -745,7 +737,7 @@ impl<'a> ToTupleImplementation<'a> {
         let add_bound = if let Some(pos) = res
             .attrs
             .iter()
-            .position(|a| a.path.is_ident(TUPLE_TYPES_NO_DEFAULT_TRAIT_BOUND))
+            .position(|a| a.path().is_ident(TUPLE_TYPES_NO_DEFAULT_TRAIT_BOUND))
         {
             res.attrs.remove(pos);
             None
@@ -843,20 +835,27 @@ impl<'a> Fold for ToTupleImplementation<'a> {
     }
 
     fn fold_stmt(&mut self, stmt: Stmt) -> Stmt {
-        let (expr, trailing_semi) = match stmt {
-            Stmt::Expr(expr) => (expr, None),
-            Stmt::Semi(expr, semi) => (expr, Some(semi)),
-            _ => return fold::fold_stmt(self, stmt),
-        };
-
-        let (expr, expanded) = self.custom_fold_expr(expr);
-
-        if expanded {
-            Stmt::Expr(expr)
-        } else if let Some(semi) = trailing_semi {
-            Stmt::Semi(expr, semi)
-        } else {
-            Stmt::Expr(expr)
+        match stmt {
+            Stmt::Expr(expr, semi) => {
+                let (expr, expanded) = self.custom_fold_expr(expr);
+                Stmt::Expr(expr, if expanded { None } else { semi })
+            }
+            Stmt::Macro(macro_stmt) => {
+                let expr = Expr::Macro(syn::ExprMacro {
+                    mac: macro_stmt.mac,
+                    attrs: macro_stmt.attrs,
+                });
+                let (expr, expanded) = self.custom_fold_expr(expr);
+                Stmt::Expr(
+                    expr,
+                    if expanded {
+                        None
+                    } else {
+                        macro_stmt.semi_token
+                    },
+                )
+            }
+            _ => fold::fold_stmt(self, stmt),
         }
     }
 
@@ -878,7 +877,7 @@ impl<'a> Fold for ToTupleImplementation<'a> {
         }
     }
 
-    fn fold_impl_item_method(&mut self, mut impl_item_method: ImplItemMethod) -> ImplItemMethod {
+    fn fold_impl_item_fn(&mut self, mut impl_item_method: ImplItemFn) -> ImplItemFn {
         let has_self = impl_item_method
             .sig
             .inputs

@@ -512,6 +512,7 @@ fn test_separators() {
 
 #[test]
 fn semi_automatic_tuple_with_custom_trait_bound() {
+    #[allow(dead_code)]
     trait Trait {
         type Arg;
 
@@ -536,6 +537,7 @@ fn semi_automatic_tuple_with_custom_trait_bound() {
 
 #[test]
 fn semi_automatic_tuple_with_custom_advanced_trait_bound() {
+    #[allow(dead_code)]
     trait Trait {
         type Arg;
         type Output;
